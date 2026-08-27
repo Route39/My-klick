@@ -128,8 +128,7 @@ webpackConfig.devServer = (devServerConfig) => {
   return devServerConfig;
 };
 
-// Wrap with visual edits (automatically adds babel plugin, dev server, and overlay in dev mode)
-}
+// Removed visual edits
 
 const configureDevServer = webpackConfig.devServer;
 webpackConfig.devServer = (devServerConfig) =>
