@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("support@route39.in");
-  const [password, setPassword] = useState("myklick123");
+  const [email, setEmail] = useState("admin@route39.in");
+  const [password, setPassword] = useState("Route@39");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -81,7 +81,7 @@ export default function Login() {
             </Button>
           </form>
           <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-center text-xs text-slate-500">
-            Demo admin: <b>support@route39.in</b> · <b>myklick123</b>
+            Demo admin: <b>admin@route39.in</b> · <b>Route@39</b>
           </p>
         </motion.div>
       </div>
