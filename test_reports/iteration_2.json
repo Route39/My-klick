@@ -1,0 +1,64 @@
+{
+  "summary": "Phase-2 (Exotel adapter layer, lead editing, customer detail, briefing, RBAC) tested end-to-end. Backend: added /app/backend/tests/test_phase2.py (40 tests) + /app/backend/tests/test_auth_hardening.py (5 tests) on top of the existing 43-test suite → 80/85 passing (94%). Verified outbound call initiate (mock provider_call_id + status 'initiated') and PATCH /calls/{id}/complete (status/duration/end_time + single 'call' timeline activity), legacy POST /leads/{id}/calls, WhatsApp send via MockAdapter (provider_message_id + 'sent' + activity), Exotel call webhook (updates call incl. duration+recording_url, exactly one activity, duplicate → {duplicate:true}, unknown incoming CallSid matched to lead by phone, missing CallSid → 400, public/no-auth), Exotel whatsapp webhook (inbound idempotent, message_status delivered→read updates, verification challenge, missing id → 400), lead edit history (value/assigned/priority 'edit' activities + persistence), GET /briefing (counts + prioritized items, sales-scoped), GET /customers/{id} (calls/messages/followups/timeline arrays, 404/401), GET /config (mock + role), role isolation (sales sees only 16 of 72 leads, 403 on other lead + its timeline/calls/messages/followups, 403 on DELETE, 403 on call/whatsapp of others' leads). Frontend: verified admin login → dark Briefing card with overdue/high/today pills + 'Start with this' item, briefing WhatsApp + Complete + Reschedule quick actions, Lead Profile Edit dialog (value 4.44L updates header, 'Lead updated' toast, edit activity in Timeline), profile Call → call panel → end → 'Call logged' toast (POST /call + PATCH /complete 200), WhatsApp tab send → outgoing bubble, Customers → Customer Detail (header, deal value, 4 metric tiles, all 4 tabs with data, back nav), sales-user UI scoping. 3 real defects found (1 HIGH functional, 1 data-leak, 1 missing error state).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "seed() / POST /api/auth/login", "issue": "Documented team_leader account leader@myklick.in cannot log in (401) — the user does not exist in the DB. seed() early-returns (`if leads.count>0: return`) before the team_defs loop, so the newly added team_leader user is never created on an already-seeded database. Consequence: the whole team_leader role path is unverifiable/unusable in this environment. Fix: move the idempotent team-user upsert out of the seeded-data guard (like seed_admin).", "priority": "HIGH"},
+      {"endpoint": "GET /api/team", "issue": "Not role-scoped: a sales user (dhanusha@myklick.in) receives every org member's lead counts, conversions and revenue (incl. the admin). Contradicts the 'sales sees only own assigned data' requirement. Confirmed in UI too — Team page lists Dhanusha/Arjun/Swathi/Gowri/Raj for a sales login. Restrict to self for non-managers (or 403).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/webhooks/exotel/whatsapp", "issue": "Duplicate `message_status` delivery returns {\"ok\":true} without duplicate:true (the inbound branch does return it). Idempotency itself is correct (the status update is skipped), only the response contract is inconsistent with the spec."},
+      {"endpoint": "POST /api/auth/login", "issue": "No brute-force protection: 6+ consecutive wrong passwords all return 401, no 429/423 lockout, no throttling (playbook item)."},
+      {"endpoint": "seed()", "issue": "Seed generates customers with converted_at in the FUTURE (ct = created + up to 3 days from 'now'), so Customer Detail shows 'Converted 28 Aug' while today is 25 Aug (3 docs). Clamp to <= now."},
+      {"endpoint": "GET /api/customers/{id}", "issue": "Legacy/older customer docs lack assigned_to / converted_by / company / location keys, so Customer Detail renders 'Converted by —' and such rows are invisible to sales users. Consider a migrate() backfill of assigned_to/converted_by from the parent lead."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Briefing (components/Briefing.jsx line 68)", "issue": "HIGH — the 'Call' quick action is broken. `startCall(first)` is passed a briefing item that exposes `lead_id` (no `id`), and CallContext.startCall posts `/leads/${l.id}/call` → request goes to POST /api/leads/undefined/call, returns 404 and shows the error toast 'Lead not found'; no call panel opens. Fix: pass `{...first, id: first.lead_id}` (the WhatsApp action already uses first.lead_id correctly).", "selector": "[data-testid=\"briefing-call\"]", "priority": "HIGH"},
+      {"component": "LeadProfile", "issue": "Opening a lead that is not assigned to the logged-in sales user (backend 403) leaves the page in a permanent loading skeleton — no error/empty state, and react-query retries the 403 four times. Add an error state ('You don't have access to this lead') / redirect, and disable retries on 4xx.", "selector": "/leads/{otherUserLeadId}", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Dashboard briefing → Call", "issue": "POST /api/leads/undefined/call → 404; call never starts from the briefing card (works correctly from Lead Profile and Leads rows).", "affected_selectors": ["[data-testid=\"briefing-call\"]", "[data-testid=\"call-panel\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Two greetings stacked: page header 'Good afternoon, Raj 👋' immediately followed by the briefing card 'Good Morning, Raj 👋'. The briefing greeting is hardcoded to 'Good Morning' regardless of time (screenshot taken 12:51 pm) — make it time-aware or drop the duplicate greeting."]},
+      {"screen": "LeadProfile quick actions", "issues": ["5 action buttons in a `sm:grid-cols-4` grid leave the new 'Edit' button alone on a second row with 3 empty cells — use grid-cols-5 (or place Edit in the header) for a balanced row."]},
+      {"screen": "Sidebar (sales role)", "issues": ["'Team' (and org-wide Customers) nav items are shown to sales users even though that data should be manager-only; hide role-restricted nav entries."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/backend/tests/test_auth_hardening.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix Briefing Call action: pass a lead object with `id` (e.g. startCall({...first, id: first.lead_id})) — currently POSTs /api/leads/undefined/call (404).",
+    "Create the team_leader user idempotently at startup so leader@myklick.in / myklick123 works (seed() currently skips team creation when leads already exist).",
+    "Scope GET /api/team for non-managers (sales currently sees the whole org's performance + revenue) and hide the Team nav item for sales.",
+    "Add an error state to LeadProfile for 403/404 responses instead of an endless skeleton; disable react-query retries on 4xx.",
+    "Return {duplicate:true} for duplicate whatsapp message_status webhooks for contract consistency.",
+    "Clamp seeded converted_at to <= now (future 'Converted 28 Aug' shown on Customer Detail) and backfill assigned_to/converted_by on legacy customer docs.",
+    "Optional: add login throttling/lockout (playbook) and de-duplicate the Dashboard greeting."
+  ],
+  "critical_code_review_comments": [
+    "communication.py adapter layer is clean and correctly isolates Exotel; verify_webhook_signature is skipped when EXOTEL_WEBHOOK_SECRET is empty — acceptable in mock mode but the webhooks are fully public today (anyone can POST call/whatsapp events and create activities on leads). Require the secret whenever COMMUNICATION_PROVIDER=exotel.",
+    "webhook_call() hardcodes organization_id=DEFAULT_ORG and find_lead_by_phone() defaults to DEFAULT_ORG — will mis-route inbound calls/messages once a second organisation exists; derive the org from the receiving virtual number.",
+    "briefing(): `item['bucket'] = 'overdue' if (_, f) in overdue else 'today'` relies on the loop variable `_` and an O(n) tuple scan of dicts; build the bucket while partitioning instead.",
+    "briefing() and get_customer() issue N+1 queries (2 queries per picked item / 4 per customer). Fine at demo scale, worth aggregating later.",
+    "PUT /api/leads/{id} uses body.model_dump() as a full $set, so any field omitted by a client is silently reset to the LeadIn default (e.g. status→'new', priority→'medium'). EditLeadDialog sends everything so the UI is safe, but a partial PATCH-style call would corrupt the lead — consider exclude_unset or a dedicated LeadUpdate model.",
+    "server.py is 1084 lines — split into routers (auth/leads/comm/webhooks/analytics) per the 700-line guideline.",
+    "CORS still defaults to '*' with allow_credentials=True (invalid combination for credentialed browser requests)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/backend/tests/test_auth_hardening.py"
+  ],
+  "success_rate": {"backend": "94% (80/85 pytest)", "frontend": "92% — all listed flows verified except the Briefing Call action (broken) and the missing 403 error state"},
+  "seed_data_creation": "Created and cleaned up TEST_-prefixed leads/calls/messages via pytest (verified 0 TEST_ docs remain via /app/backend/tests/cleanup_test_data.py; the script also removed 4 stale TEST_ customers left by iteration 1). UI side-effects on demo data (intentional, not cleaned): seeded lead 'Sri Balaji Steels' value edited to ₹4,44,000 with edit/whatsapp/call activities, and one seeded follow-up marked completed by the briefing-complete test.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "support@route39.in / myklick123 (admin) ✓, dhanusha@myklick.in / myklick123 (sales) ✓, arjun/swathi/gowri@myklick.in ✓. leader@myklick.in / myklick123 (team_leader) FAILS with 401 — user missing from DB. bcrypt hashes are $2b$12$ (correct format); login is Bearer-JWT only, no httpOnly cookie is set (documented design, not a bug).",
+  "context_for_next_testing_agent": "Suites: /app/backend/tests/backend_test.py (MVP, 43), test_phase2.py (phase-2 comm/RBAC/briefing/customer-detail, 40), test_auth_hardening.py (5). pytest.ini runs -n 2 --dist loadscope; run `python -m pytest tests/ -p no:randomly`. Known-failing (real product bugs, not test bugs): TestRoleIsolation::test_team_leader_full_access + TestAuthHardening::test_all_documented_credentials_work (leader@myklick.in missing), TestRoleIsolation::test_team_endpoint_scoped_for_sales (/api/team leak), TestExotelWhatsAppWebhook::test_status_duplicate_reports_duplicate (no duplicate flag), TestAuthHardening::test_brute_force_lockout (no lockout). Playwright notes: temp_lead fixture must use a unique phone or webhook phone-matching collides across xdist workers; the Leads page default view renders lead-row-* (not lead-card-*); LeadProfile/CustomerDetail tab panels need '[role=\"tabpanel\"][data-state=\"active\"]'; toasts are '[data-sonner-toast]'.",
+  "rca_of_the_issue": "1) Briefing Call 404: GET /api/briefing returns items keyed `lead_id` (no `id`), but CallContext.startCall builds the URL from `l.id` → '/leads/undefined/call'. 2) leader@myklick.in 401: startup calls seed(), which returns early when db.leads is non-empty; the team_defs loop that creates the 4 sales users + the team_leader therefore never runs on an existing database, so only users created during the original iteration-1 seed exist (the team_leader was added in this phase). 3) /api/team leak: team_performance() filters only by organization_id and never applies the is_manager()/assigned_to scoping used by scope_leads()."
+}

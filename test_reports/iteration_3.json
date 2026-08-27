@@ -1,0 +1,49 @@
+{
+  "summary": "Re-test of the 6 iteration_2 defects + full regression. Backend: added /app/backend/tests/test_iteration3_fixes.py (12 tests) on top of the existing 85 → 96/97 passing (99%); the only failure is TestAuthHardening::test_brute_force_lockout, which the main agent declared out of scope by design. All 4 previously-failing product tests now pass. Verified: leader@myklick.in logs in (200, role team_leader) and sees the full org (72 leads, all 5 team rows); GET /api/team is role-scoped (sales dhanusha → exactly 1 row 'Dhanusha'; admin & team_leader → 5 rows; no _id leakage); duplicate Exotel whatsapp message_status webhook returns {duplicate:true} on the 2nd delivery while the first returns no duplicate flag; no customer has a future converted_at and every customer has converted_by populated (seeded doc: converted_by 'Swathi', assigned_name 'Swathi', company/location keys present); GET /api/customers/{id} returns calls/messages/followups/timeline arrays; sales user gets 403 (not 500) on another rep's lead; /api/briefing items expose lead_id and POST /api/leads/{lead_id}/call from a briefing item returns 200 with provider_call_id + status 'initiated', PATCH /calls/{id}/complete 200. Frontend (Playwright, 1920x1080, real public URL): admin login OK; Briefing card titled \"Today's Briefing\" with a single page greeting ('Good afternoon, Raj'); briefing-call now opens call-panel with NO 'Lead not found' toast and no /leads/undefined/ request, call-end-btn → 'Call logged ✓ Sri Balaji Steels · 00:03'; sales user sidebar = Dashboard/Leads/Pipeline/Follow-ups/Customers (Team hidden) and a deep-link to /team shows only their own row; opening another rep's lead renders lead-access-error ('No access to this lead') with a working 'Back to Leads' button and exactly ONE 403 request (retry correctly disabled); Lead Profile quick actions render in sm:grid-cols-5 (Call/WhatsApp/Follow-up/Convert/Edit on one balanced row); all 5 lead tabs render data; Edit dialog → value ₹5,55,000 in header + 'Lead updated ✓'; WhatsApp send → outgoing bubble; Follow-ups reschedule ('Rescheduled to tomorrow ✓') and complete ('Follow-up completed ✓', 12→11 cards); Pipeline drag Interested→Converted fires PATCH /stage 200, 'Lead converted 🎉' toast + confetti canvas, column count 12→13; Customers (15→12 after cleanup) → Customer Detail shows deal value, SOURCE/CONVERTED/CONVERTED BY/OWNER all populated (zero '—' placeholders on seeded docs) and all 4 tabs work. Zero 4xx/5xx API responses across all frontend flows. Only 2 new minor cosmetic/data nits found; no HIGH/CRITICAL issues remain.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "seed() / GET /api/customers/{id} timeline", "issue": "converted_at was correctly clamped to <= now, but the matching 'converted' ACTIVITY created_at was not: seeded customer c0f15896 (Sunrise Electronics) has a timeline entry 'Swathi converted a lead' dated 2026-08-27T09:35Z while now is 2026-08-25T13:10Z. Customer Detail therefore renders a conversion event 2 days in the future, and it sorts above the (older) lead-created entry. Clamp seeded activity timestamps with the same min(ts, now) used for converted_at."},
+      {"endpoint": "POST /api/auth/login", "issue": "No brute-force lockout — 6 wrong passwords all return 401 (test_auth_hardening::test_brute_force_lockout fails). Reported for the record only; the main agent has explicitly de-scoped this as an optional hardening item, NOT a blocker."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sidebar footer (team_leader login)", "issues": ["Role label renders the raw enum 'Team_leader' under the user name — humanise to 'Team Leader' (replace underscores + title-case)."]},
+      {"screen": "Customer Detail (customers converted via API/UI without an assignee)", "issues": ["OWNER tile shows '—' for customers whose parent lead had no assigned_to (seen on an API-created customer; all seeded/UI-converted docs are populated). Cosmetic only — consider falling back to the converting user."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_fixes.py",
+    "/app/backend/tests/test_phase2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_auth_hardening.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "MINOR: clamp seeded 'converted' activity created_at to <= now (Customer Detail timeline currently shows a conversion dated 27 Aug while today is 25 Aug).",
+    "MINOR/cosmetic: humanise the sidebar role label ('Team_leader' → 'Team Leader').",
+    "MINOR/cosmetic: Customer Detail OWNER shows '—' when the source lead had no assigned_to.",
+    "No action required for the brute-force lockout test failure (de-scoped by design)."
+  ],
+  "critical_code_review_comments": [
+    "Still open from iteration_2 (not re-verified as fixed, carried forward): server.py is 1114 lines — split into routers (auth/leads/comm/webhooks/analytics) per the 700-line guideline.",
+    "Still open: PUT /api/leads/{id} uses body.model_dump() as a full $set, so any field a client omits is silently reset to the LeadIn default (status→'new', priority→'medium'). EditLeadDialog sends every field so the UI is safe, but a partial update from any other caller corrupts the lead — use exclude_unset or a dedicated LeadUpdate model.",
+    "Still open: webhook_call()/find_lead_by_phone() hardcode organization_id=DEFAULT_ORG — inbound calls/messages will mis-route once a second organisation exists; derive the org from the receiving virtual number.",
+    "Still open: webhooks are unauthenticated when EXOTEL_WEBHOOK_SECRET is empty (fine in mock mode) — make the secret mandatory whenever COMMUNICATION_PROVIDER=exotel.",
+    "Still open: CORS allow_origins defaults to '*' together with allow_credentials=True (an invalid combination for credentialed browser requests).",
+    "Pipeline uses native HTML5 drag-and-drop with no keyboard/touch fallback — the Converted drop target is unreachable for keyboard users and unreliable on touch; the per-card stage Select on Lead Profile is the only accessible path."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_fixes.py"
+  ],
+  "success_rate": {"backend": "99% (96/97 pytest; the 1 failure is the intentionally de-scoped brute-force lockout test)", "frontend": "100% — every listed fix and regression flow passed with zero 4xx/5xx API responses"},
+  "seed_data_creation": "pytest created TEST_-prefixed leads/customers/calls/messages; all removed afterwards via /app/backend/tests/cleanup_test_data.py (verified 0 TEST_ docs remain, customers back to 12). Intentional side-effects left on demo data by UI regression tests (not cleaned, harmless): lead 'Sri Balaji Steels' (a1467eb4) value edited to ₹5,55,000 with an extra WhatsApp message + 1 completed call, lead 'Priya Rohan' (ca33df91) dragged Interested→Converted (now a customer), 1 seeded follow-up completed and 1 rescheduled to tomorrow.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "All 6 documented accounts verified working (200): support@route39.in (admin), leader@myklick.in (team_leader — FIXED, was 401 in iteration_2), dhanusha@/arjun@/swathi@/gowri@myklick.in (sales). Password myklick123. bcrypt hashes are $2b$12$; Bearer-JWT in localStorage 'myklick_token', no httpOnly cookie (documented design).",
+  "context_for_next_testing_agent": "Suites: backend_test.py (43), test_phase2.py (40), test_auth_hardening.py (5), test_iteration3_fixes.py (12, new — covers all iteration_2 regressions). Run `cd /app/backend && python -m pytest tests/ -p no:randomly -q`. Only expected failure: test_auth_hardening::test_brute_force_lockout (de-scoped by design). Playwright gotchas learned this round: Lead Profile action testids are profile-call/profile-whatsapp/profile-followup/profile-convert/profile-edit, edit dialog uses edit-name/edit-phone/edit-value/edit-priority/edit-assign + edit-lead-submit, WhatsApp composer is whatsapp-input/whatsapp-send, Follow-ups page uses followup-card-{id}/complete-followup-{id}/reschedule-followup-{id}, Customers uses customer-card-{id}, Pipeline uses pipeline-col-{stage} + lead-card-{id} (NOT pipeline-card-*), Leads default view renders lead-row-{id}. Pipeline uses NATIVE HTML5 dnd, so Playwright mouse moves do NOT work — dispatch DragEvent('dragstart') on the card, then dragover, then drop on the column IN SEPARATE page.evaluate() calls with ~600ms waits between them (a single evaluate fails because React hasn't flushed setDragId yet).",
+  "rca_of_the_issue": "All 6 iteration_2 defects confirmed fixed at the root cause: (1) Briefing.jsx now calls startCall({...first, id: first.lead_id}) so CallContext builds a valid /leads/{id}/call URL; (2) seed_team() runs unconditionally on startup outside the 'leads already exist' guard, so leader@myklick.in is upserted idempotently; (3) team_performance() now applies the is_manager() scoping and AppShell filters the Team nav item for non-managers; (4) LeadProfile consumes react-query isError with retry disabled on 4xx and renders lead-access-error; (5) the whatsapp message_status branch returns {ok:true,duplicate:true} when _once() reports a replay; (6) migrate() backfilled assigned_to/converted_by and clamped converted_at. The only residue is that the seeded 'converted' ACTIVITY timestamp was not clamped alongside converted_at, so one demo timeline entry is still future-dated."
+}

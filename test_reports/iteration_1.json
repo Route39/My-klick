@@ -1,0 +1,55 @@
+{
+  "summary": "Full E2E test of MyKlick CRM (backend + frontend). Backend: created pytest suite (43 tests) covering auth/JWT, leads CRUD, stage change + auto customer creation, calls, WhatsApp, follow-ups (create/complete/reschedule), customers, dashboard stats, activities, team, search, users, and 401/404/422 error paths — 42/43 passed. Frontend: verified login + auth guard + logout, dashboard (4 animated snapshot cards, funnel with stage->/leads?status= navigation, lead sources, live activity, today's follow-ups), Leads list/cards/pipeline views + status filter, row Call panel with running timer + call logging toast, WhatsApp quick-send toast, Cmd+K & button global search -> lead profile navigation, quick Add Lead creation, Pipeline 6-column Kanban with HTML5 drag-and-drop (verified PATCH /api/leads/{id}/stage and persistence after reload) and Converted drop (toast + confetti), LeadProfile all 5 tabs loading data, WhatsApp send bubble, follow-up dialog creation, stage-select conversion (banner + confetti + customer created), Follow-ups page overdue/upcoming with Complete & Reschedule, Customers page (14 customers, total revenue header), Team page (5 cards with leads/contacted/won/conversion/revenue), mobile viewport (bottom nav + FAB, no horizontal overflow). No blocking issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/followups/{id}/reschedule", "issue": "Returns 500 for a non-existent follow-up id: handler updates then does db.leads.update_one({'id': fu['lead_id']}) on a None doc (TypeError). Should return 404 when follow-up not found (see backend_test.py::TestFollowUps::test_reschedule_missing_returns_404)."},
+      {"endpoint": "DELETE /api/leads/{id}", "issue": "Deleting a lead does not cascade-delete its customer/activities/followups/messages/calls, and returns 200 even when the lead id does not exist (no 404)."},
+      {"endpoint": "POST /api/leads, PATCH .../stage", "issue": "Return 200 instead of 201/200-with-explicit-status semantics; LeadIn has no field validation (empty name/phone strings accepted, arbitrary source/priority/status strings accepted; status is not validated against STATUSES on create/update)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "GlobalSearch (CommandDialog)", "issue": "Console a11y error: 'DialogContent requires a DialogTitle' — add a VisuallyHidden DialogTitle to the command palette dialog.", "selector": "[data-testid=\"global-search-input\"]", "priority": "LOW"},
+      {"component": "Dashboard sparkline charts (recharts)", "issue": "Console warning on first paint: 'The width(-1) and height(-1) of chart should be greater than 0' — give ResponsiveContainer a minWidth/minHeight or fixed height to silence and avoid a flash of unrendered charts.", "selector": "[data-testid=\"stat-newleads\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard / Leads / LeadProfile (wide desktop 1920px)", "issues": ["Content is constrained to max-w-7xl and visually left-of-centre because the 208px sidebar is not accounted for in the centring — large empty gutter on the right at >=1600px width. Pipeline uses max-w-[1600px] and looks correct.", "LeadProfile Overview tab leaves a large empty area below the card on desktop (only 3 data rows)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/cleanup_test_data.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add a 404 guard in PATCH /api/followups/{fu_id}/reschedule when the follow-up (or its lead) does not exist — currently 500.",
+    "Return 404 from DELETE /api/leads/{id} for unknown ids and cascade-delete related customer/activity/followup/message/call docs.",
+    "Validate LeadIn.status/source/priority (Literal/enum) and non-empty name/phone on POST/PUT /api/leads.",
+    "Wrap the command palette DialogContent with a VisuallyHidden DialogTitle (a11y console error).",
+    "Set minHeight on dashboard recharts ResponsiveContainers to remove the width(-1)/height(-1) warning.",
+    "Optional polish: centre page content accounting for the fixed sidebar (or widen max-width) so desktop layouts are not left-shifted."
+  ],
+  "critical_code_review_comments": [
+    "reschedule_followup() dereferences fu['lead_id'] without checking fu is not None → 500 on unknown id.",
+    "change_stage() correctly guards duplicate customer creation, but if a lead is moved converted -> other status the customer row is left behind (stale revenue in /api/customers and Customers page).",
+    "get_current_user() accepts token from cookie or Bearer header; the app only ever sets localStorage + Bearer, so the cookie branch is dead code (documented as intended Bearer-only auth).",
+    "list_leads/dashboard_stats load up to 2000/5000 docs into memory and compute funnel/sources in Python; fine for demo scale but should move to aggregation pipelines if data grows.",
+    "No rate limiting / brute-force lockout on POST /api/auth/login (unlimited wrong-password attempts accepted) — acceptable for this JWT MVP but worth noting.",
+    "CORS defaults to '*' with allow_credentials=True when CORS_ORIGINS is unset — combination is invalid for credentialed requests; harmless here (Bearer auth) but should use explicit origins."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/cleanup_test_data.py"
+  ],
+  "success_rate": {"backend": "97.7% (42/43)", "frontend": "100% of listed flows verified"},
+  "seed_data_creation": "Created TEST_-prefixed leads/customers/follow-ups/messages/calls during API and UI tests; all removed afterwards via /app/backend/tests/cleanup_test_data.py (verified 0 TEST_ docs remain). One seeded lead was moved new -> interested and another interested -> converted by the drag-and-drop tests (intentional, demo data).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "support@route39.in / myklick123 (admin) — works; seeded sales user dhanusha@myklick.in / myklick123 also verified.",
+  "context_for_next_testing_agent": "Backend suite lives at /app/backend/tests (conftest.py provides base_url/client/auth_token fixtures; pytest.ini runs -n 2 --dist loadscope). Only known failure: TestFollowUps::test_reschedule_missing_returns_404 (backend returns 500). Playwright notes: (1) LeadProfile tab panels must be selected with '[role=\"tabpanel\"][data-state=\"active\"]' (5 panels exist). (2) HTML5 drag-and-drop can only be simulated by dispatching dragstart in one page.evaluate() call, then dragover/drop in later calls — doing all in one evaluate fails because React state (setDragId) has not flushed. (3) Dashboard card testids are stat-newleads? no — use stat-followups/stat-calls/stat-conversions; the New Leads card testid is passed via prop, confirm before asserting. (4) Run /app/backend/tests/cleanup_test_data.py after creating TEST_ data.",
+  "rca_of_the_issue": "PATCH /api/followups/{id}/reschedule 500: server.py reschedule_followup() performs update_one then re-reads the follow-up and calls db.leads.update_one({'id': fu['lead_id']}) without a None check, raising TypeError for unknown ids. Fix: fetch the follow-up first and raise HTTPException(404) if missing."
+}

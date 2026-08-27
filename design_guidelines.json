@@ -1,0 +1,99 @@
+{
+  "theme_strategy": "Light Theme Default (Premium Cockpit feel). A pristine, high-contrast, energetic workspace designed to keep sales velocity high without visual fatigue.",
+  "persona_and_vibe": "Bold, Premium, Visual, Fast, Energetic, Clean, Professional. Inspired by Linear and Supabase but infused with high-energy sales mechanics.",
+  "colors": {
+    "background_app": "#F8FAFC",
+    "surface_card": "#FFFFFF",
+    "surface_glass": "rgba(255, 255, 255, 0.7)",
+    "primary_brand": "#4F46E5",
+    "primary_brand_hover": "#4338CA",
+    "text_primary": "#0F172A",
+    "text_secondary": "#64748B",
+    "border_subtle": "#E2E8F0",
+    "semantic": {
+      "won_success": "#10B981",
+      "follow_up_warning": "#F59E0B",
+      "lost_overdue_danger": "#EF4444",
+      "new_neutral": "#0EA5E9"
+    }
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "fallback_strategy": "If Outfit/Manrope are unavailable, use Cabinet Grotesk / Plus Jakarta Sans.",
+    "hierarchy": {
+      "h1_greeting": "text-4xl sm:text-5xl font-bold tracking-tight text-slate-900",
+      "h2_section": "text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900",
+      "h3_card_title": "text-lg font-medium text-slate-900",
+      "large_metrics": "text-5xl font-bold tracking-tighter text-slate-900",
+      "body": "text-sm sm:text-base text-slate-600 leading-relaxed",
+      "overline_labels": "text-xs tracking-[0.2em] uppercase font-bold text-slate-500"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous container padding with dense, functional internal card spacing. Optical alignment everywhere.",
+    "dashboard_bento": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6",
+    "page_padding": "p-6 lg:p-10",
+    "card_padding": "p-5 sm:p-6",
+    "kanban_layout": "flex overflow-x-auto gap-4 pb-6 snap-x snap-mandatory"
+  },
+  "surfaces_and_shadows": {
+    "cards_neumorphic": "bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200/60 transition-all",
+    "floating_panel": "backdrop-blur-2xl bg-white/80 rounded-3xl shadow-2xl border border-white/60",
+    "glass_header": "backdrop-blur-xl bg-white/70 border-b border-slate-200/50 sticky top-0 z-50",
+    "avatar_ring": "ring-2 ring-white shadow-sm"
+  },
+  "motion_and_interactions": {
+    "global_timing": "transition-all duration-200 ease-out",
+    "hover_lift": "hover:-translate-y-1 hover:shadow-lg",
+    "active_press": "active:scale-95",
+    "kanban_drag": "scale-105 shadow-2xl rotate-2 cursor-grabbing ring-2 ring-primary_brand",
+    "page_enter": "animate-in fade-in slide-in-from-bottom-4 duration-500",
+    "sparkline_draw": "Use Framer Motion to draw stroke length on mount."
+  },
+  "component_instructions": {
+    "snapshot_cards": "Top dashboard cards must feature large 'Outfit' numbers, a Phosphor duotone icon, and a Recharts sparkline at the bottom matching the semantic color of the metric.",
+    "kanban_pipeline": "Smooth drag-and-drop. Cards in 'Lost' get desaturated. Cards dropped in 'Converted/Won' trigger canvas-confetti blast.",
+    "live_activity_stream": "Vertical feed with connecting 2px lines (border-l-2). Avatars overlapping. New items slide in from top.",
+    "lead_profile": "Left col: Huge avatar, sticky 'Quick Actions' (Call/WhatsApp). Right col: Shadcn Tabs for Overview/Timeline.",
+    "floating_call_ui": "Bottom right fixed panel. Glassmorphism. Waveform animation when speaking using staggered framer-motion bars.",
+    "whatsapp_ui": "Familiar bubble chat interface. Use green accents. Input field with 'Send' action.",
+    "mobile_nav": "Sticky bottom nav. Glassmorphism `backdrop-blur-xl bg-white/80`. Central 'Quick Add' FAB (Floating Action Button) protruding upwards."
+  },
+  "libraries_and_packages": [
+    "@phosphor-icons/react (for premium duotone icons)",
+    "recharts (for snapshot sparklines and funnel graphic)",
+    "framer-motion (drag-and-drop, layout animations, call waveform)",
+    "canvas-confetti (for the 'Won' state explosion)",
+    "sonner (elegant toasts for actions)",
+    "lucide-react (fallback for Shadcn base primitives)"
+  ],
+  "accessibility": {
+    "contrast": "Text inside semantic status badges (e.g., Warning Amber) MUST be high contrast (e.g., Amber-900 text on Amber-100 bg).",
+    "motion": "Respect `prefers-reduced-motion` for the confetti and pipeline drag animations.",
+    "testing": "All buttons, inputs, links, and kanban cards MUST include `data-testid` attributes (e.g., `data-testid=\"lead-card-john-doe\"`)."
+  },
+  "image_urls": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODc2NTc0NTB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Avatar for active male lead/user"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1580489944761-15a19d654956?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODc2NTc0NTB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Avatar for active female lead/user"
+      },
+      {
+        "url": "https://images.pexels.com/photos/37148308/pexels-photo-37148308.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Avatar for premium client"
+      }
+    ],
+    "backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1497366754035-f200968a6e72?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBvZmZpY2V8ZW58MHx8fHwxNzg3NjU3NDUwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Subtle glass hallway for auth page background"
+      }
+    ]
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": "Do not center align standard text. Ditch boring enterprise tables—use layered list-cards instead. Add generous padding (p-6 to p-8). Apply distinct hover states with slight Y-translation to all interactive cards. NEVER use transparent headers without blur backing. NEVER use placeholder.com images. Ensure pure .js/.jsx usage as this is a JS environment. Every button and interaction surface must have a `data-testid`."
+}
