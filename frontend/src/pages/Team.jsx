@@ -120,10 +120,33 @@ function AddTeamMemberModal({ onSuccess }) {
 }
 
 
-function ViewStaffModal({ staff, open, setOpen, onDelete }) {
+function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("sales");
+
+  React.useEffect(() => {
+    if (staff && open && !isEditing) {
+      setName(staff.name);
+      setPhone(staff.phone || "");
+      setEmail(staff.email || "");
+      setRole(staff.role);
+    }
+  }, [staff, open, isEditing]);
+
   if (!staff) return null;
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    onUpdate(staff.id, { name, phone, email, role }, () => {
+      setIsEditing(false);
+    });
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
       <DialogContent className="sm:max-w-[425px] rounded-2xl border-0 p-0 shadow-2xl">
         <div className="bg-slate-900 px-6 py-6 rounded-t-2xl flex items-center gap-4">
           <Avatar name={staff.name} size={64} />
@@ -133,30 +156,66 @@ function ViewStaffModal({ staff, open, setOpen, onDelete }) {
           </div>
         </div>
         
-        <div className="p-6 space-y-6">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 font-medium">Phone / Username</span>
-              <span className="text-slate-900 font-bold">{staff.phone || "N/A"}</span>
+        {isEditing ? (
+          <form onSubmit={handleSave} className="p-6 space-y-4">
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Full Name</Label>
+              <Input required value={name} onChange={e => setName(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 font-medium">Email</span>
-              <span className="text-slate-900 font-bold">{staff.email || "N/A"}</span>
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
+              <Input required value={phone} onChange={e => setPhone(e.target.value)} className="rounded-xl border-slate-200" />
+            </div>
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>
+              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-xl border-slate-200" />
+            </div>
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Role</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger className="rounded-xl border-slate-200 bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-200">
+                  <SelectItem value="sales" className="rounded-lg">Sales Exec</SelectItem>
+                  <SelectItem value="team_leader" className="rounded-lg">Team Leader</SelectItem>
+                  <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setIsEditing(false)} className="rounded-xl">Cancel</Button>
+              <Button type="submit" className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-md">
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-medium">Phone / Username</span>
+                <span className="text-slate-900 font-bold">{staff.phone || "N/A"}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-medium">Email</span>
+                <span className="text-slate-900 font-bold">{staff.email || "N/A"}</span>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Stat value={staff.leads} label="Total Leads" />
+              <Stat value={staff.converted} label="Converted" accent />
+            </div>
+            
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setIsEditing(true)} className="rounded-xl">Edit</Button>
+              <Button type="button" variant="destructive" onClick={() => onDelete(staff.id)} className="rounded-xl bg-red-600 hover:bg-red-700 shadow-sm">
+                Delete Member
+              </Button>
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <Stat value={staff.leads} label="Total Leads" />
-            <Stat value={staff.converted} label="Converted" accent />
-          </div>
-          
-          <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-xl">Close</Button>
-            <Button type="button" variant="destructive" onClick={() => onDelete(staff.id)} className="rounded-xl bg-red-600 hover:bg-red-700 shadow-sm">
-              Delete Member
-            </Button>
-          </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -175,10 +234,22 @@ export default function Team() {
     }
   });
 
+  const updateMut = useMutation({
+    mutationFn: async ({ id, data }) => await api.put(`/team/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["team"]);
+      setSelectedStaff(null);
+    }
+  });
+
   const handleDelete = (id) => {
     if (window.confirm("Are you sure you want to permanently delete this team member?")) {
       deleteMut.mutate(id);
     }
+  };
+  
+  const handleUpdate = (id, data, onSuccess) => {
+    updateMut.mutate({ id, data }, { onSuccess });
   };
 
   return (
@@ -237,7 +308,7 @@ export default function Team() {
         </div>
       )}
       
-      <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} />
+      <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} onUpdate={handleUpdate} />
     </div>
   );
 }

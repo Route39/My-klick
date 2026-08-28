@@ -134,6 +134,12 @@ async def log_integration(kind: str, meta: dict):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+class TeamMemberUpdate(BaseModel):
+    name: str
+    phone: str
+    email: str = ""
+    role: str
+
 class TeamMemberIn(BaseModel):
     name: str
     email: str = ""
@@ -282,6 +288,24 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
         # Remove from active users
         await db.users.delete_one({"id": user_id, "organization_id": org_of(user)})
         
+    return {"ok": True}
+
+@api.put("/team/{user_id}")
+async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = {
+        "name": body.name,
+        "phone": body.phone.strip(),
+        "email": body.email.lower().strip(),
+        "role": body.role if body.role in ("admin", "team_leader", "sales") else "sales"
+    }
+    
+    await db.users.update_one(
+        {"id": user_id, "organization_id": org_of(user)},
+        {"$set": update_data}
+    )
     return {"ok": True}
 
 @api.get("/team")

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import {
-  Phone, MessageCircle, CalendarClock, Pencil, ArrowLeft, Send, CheckCircle2,
+  Phone, MessageCircle, CalendarClock, Pencil, ArrowLeft, Send, CheckCircle2, Trash,
   Repeat, UserPlus, PartyPopper, PhoneCall, Check, CheckCheck, Trophy, Play,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -47,6 +47,20 @@ export default function LeadProfile() {
       else toast.success(`Status → ${STATUS_META[status].label} ✓`);
     },
   });
+
+  const deleteLead = useMutation({
+    mutationFn: async () => await api.delete(`/leads/${id}`),
+    onSuccess: () => {
+      toast.success("Lead permanently deleted");
+      navigate("/leads");
+    }
+  });
+
+  const handleDeleteLead = () => {
+    if (window.confirm("Are you sure you want to permanently delete this lead and all its history?")) {
+      deleteLead.mutate();
+    }
+  };
 
   if (isError) {
     const s = error?.response?.status;
@@ -130,6 +144,7 @@ export default function LeadProfile() {
           <ActionBtn testid="profile-followup" icon={CalendarClock} label="Follow-up" color="amber" onClick={() => setFuOpen(true)} />
           {!converted && <ActionBtn testid="profile-convert" icon={Trophy} label="Convert" color="green" onClick={() => stage.mutate("converted")} />}
           <ActionBtn testid="profile-edit" icon={Pencil} label="Edit" color="slate" onClick={() => setEditOpen(true)} />
+          <ActionBtn testid="profile-delete" icon={Trash} label="Delete" color="red" onClick={handleDeleteLead} />
         </div>
       </motion.div>
 
