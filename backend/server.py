@@ -134,14 +134,22 @@ async def log_integration(kind: str, meta: dict):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+class TeamMemberIn(BaseModel):
+    name: str
+    email: str = ""
+    phone: str = ""
+    password: str = ""
+    role: str = "sales"
+
 class RegisterIn(BaseModel):
     name: str
-    email: str
-    password: str
+    email: str = ""
+    phone: str = ""
+    password: str = ""
     role: str = "sales"
 
 class LoginIn(BaseModel):
-    email: str
+    username: str
     password: str
 
 class LeadIn(BaseModel):
@@ -206,12 +214,13 @@ async def log_activity(atype: str, lead: dict, user: dict, text: str, meta: dict
 # ---------------------------------------------------------------------------
 @api.post("/auth/register")
 async def register(body: RegisterIn):
-    email = body.email.lower().strip()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="Email already registered")
+    email = body.email.lower().strip() if body.email else ""
+    if email:
+        if await db.users.find_one({"email": email}):
+            pass # allow duplicate empty emails, handled by removing unique index
     user = {
-        "id": str(uuid.uuid4()), "name": body.name, "email": email,
-        "password_hash": hash_password(body.password),
+        "id": str(uuid.uuid4()), "name": body.name, "email": email, "phone": body.phone,
+        "password_hash": hash_password(body.password or "password123"),
         "role": body.role if body.role in ("admin", "team_leader", "sales") else "sales",
         "organization_id": DEFAULT_ORG, "avatar": None, "created_at": now_iso(),
     }
@@ -221,11 +230,11 @@ async def register(body: RegisterIn):
 
 @api.post("/auth/login")
 async def login(body: LoginIn):
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email})
+    username = body.username.lower().strip()
+    user = await db.users.find_one({"$or": [{"email": username}, {"phone": username}]})
     if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(user["id"], email)
+        raise HTTPException(status_code=401, detail="Invalid username, email or password")
+    token = create_access_token(user["id"], user.get("email", ""))
     return {"token": token, "user": clean(user)}
 
 @api.get("/auth/me")
@@ -243,6 +252,19 @@ async def logout(user: dict = Depends(get_current_user)):
 async def list_users(user: dict = Depends(get_current_user)):
     users = await db.users.find({"organization_id": org_of(user)}).to_list(200)
     return [clean(u) for u in users]
+
+@api.post("/team")
+async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    doc = {
+        "id": str(uuid.uuid4()), "name": body.name, "email": body.email.lower().strip(), "phone": body.phone.strip(),
+        "password_hash": hash_password(body.password or "password123"),
+        "role": body.role if body.role in ("admin", "team_leader", "sales") else "sales",
+        "organization_id": org_of(user), "avatar": None, "created_at": now_iso(),
+    }
+    await db.users.insert_one(dict(doc))
+    return clean(doc)
 
 @api.get("/team")
 async def team_performance(user: dict = Depends(get_current_user)):
@@ -1078,7 +1100,7 @@ async def migrate():
         except Exception:
             pass
         if upd:
-            await db.customers.update_one({"id": c["id"]}, {"$set": upd})
+            await db.customers.update_one({"_id": c["_id"]}, {"$set": upd})
     # Clamp any future-dated demo activity timestamps (ISO strings sort lexicographically).
     _now = now_iso()
     await db.activities.update_many({"created_at": {"$gt": _now}}, {"$set": {"created_at": _now}})
@@ -1086,7 +1108,7 @@ async def migrate():
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("email", unique=True)
+    # await db.users.create_index("email", unique=True)
     await db.leads.create_index("id", unique=True)
     await db.webhook_events.create_index("event_key", unique=True)
     await db.calls.create_index("provider_call_id")

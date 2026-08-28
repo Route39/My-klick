@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Zap, Mail, Lock, ArrowRight } from "lucide-react";
+import { Zap, Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatApiErrorDetail } from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -10,15 +10,16 @@ import { Button } from "@/components/ui/button";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@route39.in");
+  const [username, setUsername] = useState("admin@route39.in");
   const [password, setPassword] = useState("Route@39");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     setError(""); setLoading(true);
-    try { await login(email, password); navigate("/"); }
+    try { await login(username, password); navigate("/"); }
     catch (err) { setError(formatApiErrorDetail(err.response?.data?.detail) || err.message); }
     finally { setLoading(false); }
   };
@@ -66,13 +67,16 @@ export default function Login() {
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com" required className="rounded-xl py-6 pl-10" />
+              <Input data-testid="login-email" type="text" value={username} onChange={(e) => setUsername(e.target.value)}
+                placeholder="you@company.com or +91 99999..." required className="rounded-xl py-6 pl-10" />
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password" required className="rounded-xl py-6 pl-10" />
+              <Input data-testid="login-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password" required className="rounded-xl py-6 pl-10 pr-12" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
             {error && <p data-testid="login-error" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
             <Button data-testid="login-submit" type="submit" disabled={loading}
