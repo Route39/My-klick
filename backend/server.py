@@ -266,6 +266,24 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
     await db.users.insert_one(dict(doc))
     return clean(doc)
 
+@api.delete("/team/{user_id}")
+async def delete_team_member(user_id: str, user: dict = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    target_user = await db.users.find_one({"id": user_id, "organization_id": org_of(user)})
+    if target_user:
+        target_user["deleted_at"] = now_iso()
+        target_user["deleted_by"] = user["id"]
+        
+        # Archive the user
+        await db.archived_users.insert_one(target_user)
+        
+        # Remove from active users
+        await db.users.delete_one({"id": user_id, "organization_id": org_of(user)})
+        
+    return {"ok": True}
+
 @api.get("/team")
 async def team_performance(user: dict = Depends(get_current_user)):
     users = await db.users.find({"organization_id": org_of(user)}).to_list(200)
@@ -281,6 +299,7 @@ async def team_performance(user: dict = Depends(get_current_user)):
         rate = round((converted / total) * 100) if total else 0
         out.append({
             "id": u["id"], "name": u["name"], "role": u["role"], "avatar": u.get("avatar"),
+            "phone": u.get("phone", ""), "email": u.get("email", ""),
             "leads": total, "contacted": contacted, "converted": converted,
             "value": value, "conversion_rate": rate,
         })

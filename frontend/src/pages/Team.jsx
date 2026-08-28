@@ -119,8 +119,67 @@ function AddTeamMemberModal({ onSuccess }) {
   );
 }
 
+
+function ViewStaffModal({ staff, open, setOpen, onDelete }) {
+  if (!staff) return null;
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-[425px] rounded-2xl border-0 p-0 shadow-2xl">
+        <div className="bg-slate-900 px-6 py-6 rounded-t-2xl flex items-center gap-4">
+          <Avatar name={staff.name} size={64} />
+          <div>
+            <DialogTitle className="text-xl font-display font-bold text-white tracking-tight">{staff.name}</DialogTitle>
+            <p className="text-sm text-slate-300 mt-0.5 capitalize">{staff.role.replace("_", " ")}</p>
+          </div>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-slate-500 font-medium">Phone / Username</span>
+              <span className="text-slate-900 font-bold">{staff.phone || "N/A"}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-slate-500 font-medium">Email</span>
+              <span className="text-slate-900 font-bold">{staff.email || "N/A"}</span>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <Stat value={staff.leads} label="Total Leads" />
+            <Stat value={staff.converted} label="Converted" accent />
+          </div>
+          
+          <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-xl">Close</Button>
+            <Button type="button" variant="destructive" onClick={() => onDelete(staff.id)} className="rounded-xl bg-red-600 hover:bg-red-700 shadow-sm">
+              Delete Member
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Team() {
   const { data = [], isLoading } = useQuery({ queryKey: ["team"], queryFn: async () => (await api.get("/team")).data });
+  const queryClient = useQueryClient();
+  const [selectedStaff, setSelectedStaff] = useState(null);
+
+  const deleteMut = useMutation({
+    mutationFn: async (id) => await api.delete(`/team/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["team"]);
+      setSelectedStaff(null);
+    }
+  });
+
+  const handleDelete = (id) => {
+    if (window.confirm("Are you sure you want to permanently delete this team member?")) {
+      deleteMut.mutate(id);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -139,7 +198,7 @@ export default function Team() {
             return (
               <motion.div key={m.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.05, 0.3) }}
                 data-testid={`team-card-${m.id}`}
-                className="rounded-2xl border border-slate-200/60 bg-white p-5 card-lift">
+                className="rounded-2xl border border-slate-200/60 bg-white p-5 card-lift cursor-pointer hover:border-violet-300 transition-colors" onClick={() => setSelectedStaff(m)}>
                 <div className="flex items-center gap-3">
                   <Avatar name={m.name} size={48} />
                   <div className="flex-1">
@@ -177,6 +236,8 @@ export default function Team() {
           })}
         </div>
       )}
+      
+      <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} />
     </div>
   );
 }
