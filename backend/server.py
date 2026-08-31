@@ -14,7 +14,7 @@ import jwt
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, BackgroundTasks, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -172,6 +172,8 @@ class LeadIn(BaseModel):
     assigned_to: Optional[str] = None
     value: float = 0
     notes: Optional[str] = ""
+    no_of_vehicles: Optional[str] = ""
+    remarks: Optional[str] = ""
 
 class StageIn(BaseModel):
     status: str
@@ -335,13 +337,15 @@ async def team_performance(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 @api.get("/leads")
 async def list_leads(
-    status: Optional[str] = None, source: Optional[str] = None,
+    status: Optional[str] = None, exclude_status: Optional[str] = None, source: Optional[str] = None,
     assigned_to: Optional[str] = None, q: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     base = {}
     if status:
         base["status"] = status
+    elif exclude_status:
+        base["status"] = {"$ne": exclude_status}
     if source:
         base["source"] = source
     if assigned_to and is_manager(user):
@@ -359,6 +363,51 @@ async def list_leads(
 async def get_lead(lead_id: str, user: dict = Depends(get_current_user)):
     return clean(await lead_or_403(lead_id, user))
 
+import asyncio
+
+import asyncio
+
+async def enrich_lead_metadata(lead_id: str, phone: str):
+    """Fetches telecom info (DND, Operator) in the background and saves to the lead."""
+    adapter = comm.get_adapter()
+    try:
+        # Exotel Number Metadata API only accepts 10-digit numbers, so strip the +91 if present
+        clean_phone = phone.replace("+91", "").replace(" ", "")[-10:]
+        meta = await adapter.get_number_metadata(clean_phone)
+        if meta and meta.get("DND"):
+            upd = {
+                "dnd_status": meta.get("DND"),
+                "operator": meta.get("OperatorName", ""),
+                "circle": meta.get("CircleName", ""),
+            }
+            await db.leads.update_one({"id": lead_id}, {"$set": upd})
+            lead = await db.leads.find_one({"id": lead_id})
+            # Log the enrichment
+            if upd["dnd_status"] == "Yes":
+                await log_activity("metadata", lead, {"id": "system", "name": "System"}, "detected DND enabled for this number.")
+    except Exception:
+        pass  # Fail gracefully in the background
+
+@api.get("/leads/{lead_id}/metadata")
+async def get_lead_metadata(lead_id: str, user: dict = Depends(get_current_user)):
+    """Manually fetch and sync the number metadata for a lead."""
+    lead = await lead_or_403(lead_id, user)
+    clean_phone = lead["phone"].replace("+91", "").replace(" ", "")[-10:]
+    adapter = comm.get_adapter()
+    try:
+        meta = await adapter.get_number_metadata(clean_phone)
+        if meta and meta.get("DND"):
+            upd = {
+                "dnd_status": meta.get("DND"),
+                "operator": meta.get("OperatorName", ""),
+                "circle": meta.get("CircleName", ""),
+            }
+            await db.leads.update_one({"id": lead_id}, {"$set": upd})
+            return upd
+        return {"error": "Metadata not found or number invalid."}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
 @api.post("/leads")
 async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     assigned = None
@@ -373,10 +422,28 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         "source": body.source, "status": body.status, "priority": body.priority,
         "assigned_to": body.assigned_to, "assigned_name": assigned["name"] if assigned else None,
         "value": body.value, "notes": body.notes or "", "next_followup": None,
+        "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
         "created_at": now_iso(), "updated_at": now_iso(),
     }
+    
+    if body.status == "follow_up":
+        due = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        lead["next_followup"] = due.isoformat()
+        fu = {
+            "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead["id"],
+            "lead_name": lead["name"], "reason": "System auto-scheduled from lead creation",
+            "assigned_to": lead["assigned_to"], "assigned_name": lead["assigned_name"],
+            "status": "pending", "due_at": lead["next_followup"],
+            "created_at": now_iso(), "updated_at": now_iso()
+        }
+        await db.followups.insert_one(dict(fu))
+
     await db.leads.insert_one(dict(lead))
     await log_activity("lead_created", lead, user, "created a new lead")
+    
+    # Trigger background metadata lookup
+    asyncio.create_task(enrich_lead_metadata(lead["id"], lead["phone"]))
+    
     return clean(lead)
 
 @api.put("/leads/{lead_id}")
@@ -390,6 +457,12 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     update["whatsapp"] = body.whatsapp or body.phone
     update["phone_norm"] = norm_phone(body.phone)
     update["updated_at"] = now_iso()
+    old_status = lead.get("status")
+    # Track where the lead was before entering follow_up so we can restore it later
+    if body.status == "follow_up" and old_status != "follow_up":
+        update["pre_followup_status"] = old_status
+    elif old_status == "follow_up" and body.status != "follow_up":
+        update["pre_followup_status"] = None
     await db.leads.update_one({"id": lead_id}, {"$set": update})
 
     # Record meaningful edits in the timeline.
@@ -404,6 +477,11 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
                            {"from": lead.get("priority"), "to": body.priority, "field": "priority"})
 
     new = await db.leads.find_one({"id": lead_id})
+    if new.get("status") == "follow_up" and lead.get("status") != "follow_up":
+        await maybe_auto_schedule_followup(new, user)
+    elif new.get("status") != "follow_up" and lead.get("status") == "follow_up":
+        # Was in follow_up, now leaving — delete pending followups
+        await db.followups.delete_many({"lead_id": lead_id, "status": "pending"})
     return clean(new)
 
 @api.patch("/leads/{lead_id}/stage")
@@ -412,7 +490,14 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail="Invalid status")
     lead = await lead_or_403(lead_id, user)
     old = lead.get("status")
-    await db.leads.update_one({"id": lead_id}, {"$set": {"status": body.status, "updated_at": now_iso()}})
+    update_fields = {"status": body.status, "updated_at": now_iso()}
+    # When moving INTO follow_up, save where we came from
+    if body.status == "follow_up" and old != "follow_up":
+        update_fields["pre_followup_status"] = old
+    # When moving OUT of follow_up, clear the saved status
+    elif old == "follow_up" and body.status != "follow_up":
+        update_fields["pre_followup_status"] = None
+    await db.leads.update_one({"id": lead_id}, {"$set": update_fields})
     lead["status"] = body.status
     if body.status == "converted" and old != "converted":
         await log_activity("converted", lead, user, "converted a lead", {"value": lead.get("value", 0)})
@@ -432,13 +517,31 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
                            {"from": old, "to": body.status})
         if old == "converted" and body.status != "converted":
             await db.customers.delete_one({"lead_id": lead_id})
+            
+    if body.status == "follow_up" and old != "follow_up":
+        await maybe_auto_schedule_followup(lead, user)
+    elif body.status != "follow_up":
+        await db.followups.delete_many({"lead_id": lead_id, "status": "pending"})
+        
     new = await db.leads.find_one({"id": lead_id})
     return clean(new)
 
+async def maybe_auto_schedule_followup(lead: dict, user: dict):
+    pending = await db.followups.find_one({"lead_id": lead["id"], "status": "pending"})
+    if not pending:
+        due = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        fu = {
+            "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead["id"],
+            "lead_name": lead["name"], "reason": "System auto-scheduled from status change",
+            "assigned_to": lead.get("assigned_to"), "assigned_name": lead.get("assigned_name"),
+            "status": "pending", "due_at": due.isoformat(),
+            "created_at": now_iso(), "updated_at": now_iso()
+        }
+        await db.followups.insert_one(dict(fu))
+        await db.leads.update_one({"id": lead["id"]}, {"$set": {"next_followup": due.isoformat()}})
+
 @api.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
-    if not is_manager(user):
-        raise HTTPException(status_code=403, detail="Only managers can delete leads")
     await lead_or_403(lead_id, user)
     await db.leads.delete_one({"id": lead_id})
     await db.activities.delete_many({"lead_id": lead_id})
@@ -500,6 +603,35 @@ async def initiate_call(lead_id: str, user: dict = Depends(get_current_user)):
     await log_integration("call_initiated", {"lead_id": lead_id, "provider_call_id": call["provider_call_id"], "provider": adapter.provider})
     return clean(call)
 
+@api.post("/leads/{lead_id}/ivr")
+async def initiate_ivr(lead_id: str, user: dict = Depends(get_current_user)):
+    lead = await lead_or_403(lead_id, user)
+    app_id = os.environ.get("EXOTEL_IVR_APP_ID")
+    if not app_id:
+        raise HTTPException(status_code=400, detail="IVR Applet ID is not configured (EXOTEL_IVR_APP_ID)")
+        
+    adapter = comm.get_adapter()
+    try:
+        result = await adapter.initiate_ivr_call(
+            to_number=lead["phone"], app_id=app_id, custom_field=lead_id,
+        )
+    except comm.CommunicationError as e:
+        await log_integration("ivr_error", {"lead_id": lead_id, "provider": adapter.provider, "error": str(e)})
+        raise HTTPException(status_code=502, detail="Unable to trigger IVR flow right now.")
+
+    call = {
+        "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead_id,
+        "provider": adapter.provider, "provider_call_id": result.get("provider_call_id"),
+        "direction": "outgoing-ivr", "status": result.get("status", "initiated"),
+        "from_number": os.environ.get("EXOTEL_VIRTUAL_NUMBER", ""), "to_number": lead["phone"],
+        "duration_seconds": 0, "recording_url": None,
+        "user_id": user["id"], "user_name": user["name"],
+        "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
+    }
+    await db.calls.insert_one(dict(call))
+    await log_integration("ivr_initiated", {"lead_id": lead_id, "provider_call_id": call["provider_call_id"], "provider": adapter.provider})
+    return clean(call)
+
 @api.patch("/calls/{call_id}/complete")
 async def complete_call(call_id: str, body: CallCompleteIn, user: dict = Depends(get_current_user)):
     call = await db.calls.find_one({"id": call_id})
@@ -516,6 +648,45 @@ async def complete_call(call_id: str, body: CallCompleteIn, user: dict = Depends
                            {"duration": f"{mins}m {secs}s", "status": status,
                             "duration_seconds": body.duration_seconds})
         await db.calls.update_one({"id": call_id}, {"$set": {"activity_logged": True}})
+    new = await db.calls.find_one({"id": call_id})
+    return clean(new)
+
+@api.get("/calls/{call_id}/sync")
+async def sync_call(call_id: str, user: dict = Depends(get_current_user)):
+    """Fetches real-time call status and recording URL directly from Exotel API."""
+    call = await db.calls.find_one({"id": call_id})
+    if not call or call.get("organization_id", DEFAULT_ORG) != org_of(user):
+        raise HTTPException(status_code=404, detail="Call not found")
+    
+    if not call.get("provider_call_id") or call.get("provider") != "exotel":
+        raise HTTPException(status_code=400, detail="Not an Exotel call")
+
+    adapter = comm.get_adapter()
+    try:
+        details = await adapter.get_call_details(call["provider_call_id"])
+    except comm.CommunicationError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    upd = {
+        "status": details["status"],
+        "duration_seconds": details.get("duration_seconds", call.get("duration_seconds", 0))
+    }
+    if details.get("recording_url"):
+        upd["recording_url"] = details["recording_url"]
+    if upd["status"] in comm.TERMINAL_CALL_STATES and not call.get("end_time"):
+        upd["end_time"] = now_iso()
+
+    await db.calls.update_one({"id": call_id}, {"$set": upd})
+    
+    # If newly completed, log the activity
+    if upd["status"] in comm.TERMINAL_CALL_STATES and not call.get("activity_logged"):
+        lead = await db.leads.find_one({"id": call["lead_id"]})
+        if lead:
+            mins, secs = divmod(upd["duration_seconds"], 60)
+            await log_activity("call", lead, user, f"logged a {call.get('direction', 'outgoing')} call (synced)",
+                               {"duration": f"{mins}m {secs}s", "status": upd["status"], "duration_seconds": upd["duration_seconds"]})
+            await db.calls.update_one({"id": call_id}, {"$set": {"activity_logged": True}})
+
     new = await db.calls.find_one({"id": call_id})
     return clean(new)
 
@@ -710,6 +881,36 @@ async def webhook_whatsapp(request: Request):
     await log_integration("whatsapp_inbound", {"provider_message_id": msg_id, "matched": bool(lead)})
     return {"ok": True}
 
+@api.get("/webhooks/exotel/dynamic-connect")
+async def exotel_dynamic_connect(request: Request):
+    """Dynamic Connect Applet: returns comma separated phone numbers to dial."""
+    # Placeholder: connect to the default admin phone number or a specific agent
+    return Response(content="+919999999999", media_type="text/plain")
+
+@api.post("/webhooks/exotel/passthru")
+async def exotel_passthru(request: Request):
+    """Passthru Applet: Return 200 OK or 302 Found based on caller."""
+    form = await request.form()
+    from_num = form.get("From", "")
+    lead = await find_lead_by_phone(from_num)
+    if lead:
+        # Caller is a known lead, return 200 to route them differently
+        return Response(status_code=200)
+    else:
+        # Caller is unknown, return 302
+        return Response(status_code=302)
+
+@api.get("/webhooks/exotel/dynamic-sms")
+async def exotel_dynamic_sms(request: Request):
+    """Dynamic SMS Applet: returns the SMS text to send."""
+    from_num = request.query_params.get("From", "")
+    lead = await find_lead_by_phone(from_num)
+    if lead:
+        text = f"Hi {lead.get('name', 'there')}, someone from our team will be with you shortly!"
+    else:
+        text = "Thanks for calling! A representative will call you back."
+    return Response(content=text, media_type="text/plain")
+
 # ---------------------------------------------------------------------------
 # Follow-ups
 # ---------------------------------------------------------------------------
@@ -727,7 +928,7 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
         "status": "pending", "created_at": now_iso(), "completed_at": None,
     }
     await db.followups.insert_one(dict(fu))
-    await db.leads.update_one({"id": lead_id}, {"$set": {"next_followup": body.due_at, "updated_at": now_iso()}})
+    await db.leads.update_one({"id": lead_id}, {"$set": {"status": "follow_up", "next_followup": body.due_at, "updated_at": now_iso()}})
     await log_activity("followup_created", lead, user, "scheduled a follow-up", {"due_at": body.due_at})
     return clean(fu)
 
@@ -753,6 +954,16 @@ async def list_followups(scope: str = "all", user: dict = Depends(get_current_us
         item = clean(f)
         item["overdue"] = overdue
         item["today"] = today
+        # Enrich with lead data — and SKIP if lead is no longer in follow_up status
+        lead = await db.leads.find_one({"id": f["lead_id"]})
+        if not lead or lead.get("status") != "follow_up":
+            # Clean up the stale follow-up record from the database
+            await db.followups.delete_one({"id": f["id"]})
+            continue
+        item["lead_phone"] = lead.get("phone")
+        item["lead_value"] = lead.get("value")
+        item["lead_status"] = lead.get("status")
+        item["lead_name"] = lead.get("name")
         out.append(item)
     return out
 
@@ -763,6 +974,11 @@ async def complete_followup(fu_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Follow-up not found")
     await db.followups.update_one({"id": fu_id}, {"$set": {"status": "completed", "completed_at": now_iso()}})
     lead = await db.leads.find_one({"id": fu["lead_id"]}) or {"id": fu["lead_id"], "name": fu["lead_name"]}
+    # Move lead out of follow_up stage into contacted
+    if lead.get("status") == "follow_up":
+        restore_status = lead.get("pre_followup_status") or "new"
+        await db.leads.update_one({"id": fu["lead_id"]},
+            {"$set": {"status": restore_status, "pre_followup_status": None, "updated_at": now_iso()}})
     await log_activity("followup_completed", lead, user, "completed a follow-up")
     return {"ok": True}
 
@@ -775,6 +991,25 @@ async def reschedule_followup(fu_id: str, body: RescheduleIn, user: dict = Depen
     fu = await db.followups.find_one({"id": fu_id})
     await db.leads.update_one({"id": fu["lead_id"]}, {"$set": {"next_followup": body.due_at}})
     return clean(fu)
+
+@api.delete("/followups/{fu_id}")
+async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
+    fu = await db.followups.find_one({"id": fu_id})
+    if not fu or fu.get("organization_id", DEFAULT_ORG) != org_of(user):
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    await db.followups.delete_one({"id": fu_id})
+    # Check if lead has any other pending follow-ups
+    other_pending = await db.followups.find_one({"lead_id": fu["lead_id"], "status": "pending"})
+    if not other_pending:
+        # No more pending follow-ups — restore lead to where it was BEFORE entering follow_up
+        lead = await db.leads.find_one({"id": fu["lead_id"]})
+        if lead and lead.get("status") == "follow_up":
+            restore_status = lead.get("pre_followup_status") or "new"
+            await db.leads.update_one(
+                {"id": fu["lead_id"]},
+                {"$set": {"status": restore_status, "pre_followup_status": None, "next_followup": None, "updated_at": now_iso()}}
+            )
+    return {"ok": True}
 
 # ---------------------------------------------------------------------------
 # Briefing
@@ -972,6 +1207,17 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 @api.get("/config")
 async def get_config(user: dict = Depends(get_current_user)):
     return {"communication_provider": comm.provider_name(), "role": user.get("role")}
+
+@api.get("/config/balance")
+async def get_balance(user: dict = Depends(get_current_user)):
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Only managers can view balance")
+    adapter = comm.get_adapter()
+    try:
+        balance_data = await adapter.get_account_balance()
+        return balance_data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 # ---------------------------------------------------------------------------
 # Seed

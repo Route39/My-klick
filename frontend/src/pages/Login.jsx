@@ -64,16 +64,16 @@ export default function Login() {
           <h2 className="font-display text-3xl font-bold text-slate-900">Welcome back 👋</h2>
           <p className="mt-1.5 text-slate-500">Sign in to your sales cockpit.</p>
 
-          <form onSubmit={submit} className="mt-8 space-y-4">
+          <form onSubmit={submit} className="mt-8 space-y-4" autoComplete="off">
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-email" type="text" value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="you@company.com or +91 99999..." required className="rounded-xl py-6 pl-10" />
+              <Input data-testid="login-email" type="text" name="myklick_email_field" id="myklick_email_field" value={username} onChange={(e) => setUsername(e.target.value)}
+                placeholder="you@company.com or +91 99999..." required autoComplete="new-password" spellCheck="false" className="rounded-xl py-6 pl-10" />
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password" required className="rounded-xl py-6 pl-10 pr-12" />
+              <Input data-testid="login-password" type={showPassword ? "text" : "password"} name="myklick_password_field" id="myklick_password_field" value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password" required autoComplete="new-password" spellCheck="false" className="rounded-xl py-6 pl-10 pr-12" />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>

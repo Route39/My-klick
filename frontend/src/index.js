@@ -7,8 +7,16 @@ import App from "@/App";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
+      staleTime: 0,
+      gcTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      placeholderData: (prev) => prev,
+      retry: (count, err) => {
+        const s = err?.response?.status;
+        if (s >= 400 && s < 500) return false;
+        return count < 2;
+      },
     },
   },
 });

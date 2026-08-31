@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
-import { LayoutGrid, List as ListIcon, KanbanSquare, Rocket, Filter, Phone, MessageCircle, Clock } from "lucide-react";
+import { LayoutGrid, List as ListIcon, KanbanSquare, Rocket, Filter, Phone, MessageCircle, Clock, Trash, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
 import api from "@/lib/api";
 import { LeadCard } from "@/components/LeadCard";
@@ -31,7 +31,12 @@ export default function Leads() {
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", status],
-    queryFn: async () => (await api.get(`/leads${status ? `?status=${status}` : ""}`)).data,
+    queryFn: async () => {
+      const queryParams = status ? `?status=${status}` : `?exclude_status=follow_up`;
+      return (await api.get(`/leads${queryParams}`)).data;
+    },
+    refetchInterval: 15000,
+    placeholderData: (prev) => prev,
   });
 
   const setStatus = (s) => {
@@ -89,6 +94,17 @@ export default function Leads() {
 function LeadList({ leads }) {
   const navigate = useNavigate();
   const { startCall } = useCall();
+  const qc = useQueryClient();
+  
+  const deleteLead = useMutation({
+    mutationFn: async (id) => await api.delete(`/leads/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      toast.success("Lead permanently deleted");
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not delete lead."),
+  });
+
   return (
     <div className="space-y-2.5">
       {leads.map((l, i) => (
@@ -120,6 +136,10 @@ function LeadList({ leads }) {
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
             <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 active:scale-90"><MessageCircle className="h-4 w-4" /></button>
+            <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/leads/${l.id}?edit=true`); }}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 active:scale-90"><Pencil className="h-4 w-4" /></button>
+            <button data-testid={`row-delete-${l.id}`} onClick={(e) => { e.stopPropagation(); if(window.confirm("Are you sure you want to permanently delete this lead?")) deleteLead.mutate(l.id); }}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100 active:scale-90"><Trash className="h-4 w-4" /></button>
           </div>
         </motion.div>
       ))}

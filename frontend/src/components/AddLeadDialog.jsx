@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { SOURCES, SOURCE_META } from "@/lib/constants";
@@ -16,8 +17,9 @@ import { Rocket } from "lucide-react";
 
 export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new" }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "",
+    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "",
   });
 
   const { data: users = [] } = useQuery({
@@ -34,8 +36,9 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new" }) {
     onSuccess: (lead) => {
       qc.invalidateQueries();
       toast.success("Lead created ✓", { description: lead.name });
-      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "" });
+      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "" });
       onOpenChange(false);
+      navigate(`/leads/${lead.id}`);
     },
     onError: () => toast.error("Could not create lead"),
   });
@@ -84,19 +87,31 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new" }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Potential value</Label>
+              <Label>Cash value</Label>
               <Input data-testid="lead-value-input" type="number" value={form.value} onChange={(e) => set("value")(e.target.value)}
                 placeholder="₹" className="rounded-xl" />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>No of vehicles</Label>
+              <Input data-testid="lead-vehicles-input" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)}
+                placeholder="e.g. 2" className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Assign to</Label>
+              <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
+                <SelectTrigger data-testid="lead-assign-select" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="space-y-1.5">
-            <Label>Assign to</Label>
-            <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
-              <SelectTrigger data-testid="lead-assign-select" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-              <SelectContent>
-                {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label>Remarks</Label>
+            <Input data-testid="lead-remarks-input" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)}
+              placeholder="Any additional remarks..." className="rounded-xl" />
           </div>
           <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending}
             className="w-full rounded-xl py-6 text-base font-semibold">

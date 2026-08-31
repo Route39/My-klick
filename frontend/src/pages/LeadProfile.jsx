@@ -27,7 +27,7 @@ export default function LeadProfile() {
   const qc = useQueryClient();
   const { startCall } = useCall();
   const [fuOpen, setFuOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(params.get("edit") === "true");
 
   const { data: lead, isLoading, isError, error } = useQuery({
     queryKey: ["lead", id],
@@ -46,14 +46,18 @@ export default function LeadProfile() {
       if (status === "converted") { fire(); toast.success("Lead converted 🎉", { description: lead?.name }); }
       else toast.success(`Status → ${STATUS_META[status].label} ✓`);
     },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not update stage"),
   });
 
   const deleteLead = useMutation({
     mutationFn: async () => await api.delete(`/leads/${id}`),
     onSuccess: () => {
+      qc.removeQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries();
       toast.success("Lead permanently deleted");
       navigate("/leads");
-    }
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not delete lead."),
   });
 
   const handleDeleteLead = () => {
@@ -113,7 +117,7 @@ export default function LeadProfile() {
               <div className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5">
                 <Trophy className="h-4 w-4 text-emerald-600" />
                 <span className="font-display text-lg font-bold text-emerald-700">{fullINR(lead.value)}</span>
-                <span className="text-xs text-emerald-600/70">potential value</span>
+                <span className="text-xs text-emerald-600/70">cash value</span>
               </div>
             )}
           </div>
@@ -194,6 +198,7 @@ function Overview({ lead }) {
   const rows = [
     ["Phone", lead.phone], ["WhatsApp", lead.whatsapp], ["Company", lead.company || "—"],
     ["Assigned to", lead.assigned_name || "Unassigned"], ["Created", formatDay(lead.created_at)],
+    ["No of vehicles", lead.no_of_vehicles || "—"]
   ];
   return (
     <Panel>
@@ -205,7 +210,8 @@ function Overview({ lead }) {
           </div>
         ))}
       </div>
-      {lead.notes && <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">{lead.notes}</p>}
+      {lead.notes && <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600"><span className="font-semibold block mb-1">Notes:</span>{lead.notes}</p>}
+      {lead.remarks && <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600"><span className="font-semibold block mb-1">Remarks:</span>{lead.remarks}</p>}
     </Panel>
   );
 }

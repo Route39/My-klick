@@ -66,7 +66,10 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             <Field label="Product / interest"><Input value={form.product} onChange={(e) => set("product")(e.target.value)} className="rounded-xl" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Value (₹)"><Input data-testid="edit-value" type="number" value={form.value} onChange={(e) => set("value")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="Cash value (₹)"><Input data-testid="edit-value" type="number" value={form.value} onChange={(e) => set("value")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="No of vehicles"><Input data-testid="edit-vehicles" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)} className="rounded-xl" /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Priority">
               <Select value={form.priority} onValueChange={set("priority")}>
                 <SelectTrigger data-testid="edit-priority" className="rounded-xl"><SelectValue /></SelectTrigger>
@@ -89,6 +92,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             </Field>
           </div>
           <Field label="Notes"><Textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} className="rounded-xl" rows={3} /></Field>
+          <Field label="Remarks"><Input data-testid="edit-remarks" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)} className="rounded-xl" /></Field>
           <Button data-testid="edit-lead-submit" type="submit" disabled={save.isPending} className="w-full rounded-xl py-6 text-base font-semibold">
             {save.isPending ? "Saving…" : "Save Changes"}
           </Button>
@@ -108,5 +112,6 @@ function shape(l = {}) {
     location: l.location || "", product: l.product || "", source: l.source || "manual",
     status: l.status || "new", priority: l.priority || "medium",
     assigned_to: l.assigned_to || "", value: l.value || 0, notes: l.notes || "", company: l.company || "",
+    no_of_vehicles: l.no_of_vehicles || "", remarks: l.remarks || "",
   };
 }

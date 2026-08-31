@@ -31,16 +31,21 @@ export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
+  const [addState, setAddState] = useState({ open: false, status: "new" });
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const navItems = NAV.filter((n) => n.label !== "Team" || isManager);
 
   useEffect(() => {
-    const h = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setSearchOpen((o) => !o); }
+    const handleKeyDown = (e) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault(); setSearchOpen((o) => !o);
+      }
+      if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault(); setAddState({ open: true, status: "new" });
+      }
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   return (
@@ -96,21 +101,21 @@ export default function AppShell() {
               <span className="hidden sm:inline">Search MyKlick…</span>
               <kbd className="ml-auto hidden rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline">⌘K</kbd>
             </button>
-            <button data-testid="quick-add-lead-btn" onClick={() => setAddOpen(true)}
+            <button data-testid="quick-add-lead-btn" onClick={() => setAddState({ open: true, status: "new" })}
               className="ml-auto flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95 lg:ml-3">
               <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Lead</span>
             </button>
           </header>
 
           <main className="px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">
-            <Outlet context={{ openAdd: () => setAddOpen(true) }} />
+            <Outlet context={{ openAdd: (status = "new") => setAddState({ open: true, status }) }} />
           </main>
         </div>
 
         {/* Mobile bottom nav */}
         <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-200/60 px-2 py-2 glass lg:hidden">
           {MOBILE_NAV.slice(0, 2).map((n) => <MobileTab key={n.to} {...n} />)}
-          <button data-testid="mobile-quick-add" onClick={() => setAddOpen(true)}
+          <button data-testid="mobile-quick-add" onClick={() => setAddState({ open: true, status: "new" })}
             className="-mt-8 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-xl shadow-primary/40 active:scale-90">
             <Plus className="h-6 w-6" />
           </button>
@@ -118,7 +123,7 @@ export default function AppShell() {
         </nav>
 
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
-        <AddLeadDialog open={addOpen} onOpenChange={setAddOpen} />
+        <AddLeadDialog open={addState.open} onOpenChange={(v) => setAddState((s) => ({ ...s, open: v }))} defaultStatus={addState.status} />
       </div>
     </CallProvider>
   );

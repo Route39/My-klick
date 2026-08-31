@@ -15,6 +15,8 @@ export default function Pipeline() {
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", ""], queryFn: async () => (await api.get("/leads")).data,
+    refetchInterval: 15000,
+    placeholderData: (prev) => prev,
   });
 
   const move = useMutation({
@@ -22,13 +24,13 @@ export default function Pipeline() {
     onMutate: async ({ id, status }) => {
       await qc.cancelQueries({ queryKey: ["leads", ""] });
       const prev = qc.getQueryData(["leads", ""]);
+      // Optimistic update: move card immediately, no flicker
       qc.setQueryData(["leads", ""], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
       return { prev };
     },
     onError: (e, v, ctx) => { qc.setQueryData(["leads", ""], ctx.prev); toast.error("Could not move lead"); },
     onSuccess: (_d, { status, name }) => {
-      qc.invalidateQueries({ queryKey: ["stats"] });
-      qc.invalidateQueries({ queryKey: ["activities"] });
+      qc.invalidateQueries();
       if (status === "converted") {
         celebrate();
         toast.success("Lead converted 🎉", { description: name });

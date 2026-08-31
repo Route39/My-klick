@@ -1,7 +1,8 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Phone, MessageCircle, Clock } from "lucide-react";
+import { Phone, MessageCircle, Clock, Trash, Pencil } from "lucide-react";
 import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
 import { formatINR, formatClock, formatDay } from "@/lib/constants";
@@ -13,6 +14,16 @@ import { cn } from "@/lib/utils";
 export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
   const navigate = useNavigate();
   const { startCall } = useCall();
+  const qc = useQueryClient();
+
+  const deleteLead = useMutation({
+    mutationFn: async (id) => await api.delete(`/leads/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      toast.success("Lead permanently deleted");
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not delete lead."),
+  });
 
   const whatsapp = async (e) => {
     e.stopPropagation();
@@ -48,9 +59,17 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           <div className="truncate text-xs text-slate-400">{lead.phone}</div>
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <SourceBadge source={lead.source} />
-        {lead.value > 0 && <span className="font-display font-bold text-slate-900">{formatINR(lead.value)}</span>}
+      <div className="mt-3 flex flex-col gap-2 text-xs">
+        <div className="flex items-center justify-between">
+          <SourceBadge source={lead.source} />
+          {lead.value > 0 && <span className="font-display font-bold text-slate-900">{formatINR(lead.value)}</span>}
+        </div>
+        {(lead.no_of_vehicles || lead.remarks) && (
+          <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-slate-500">
+            {lead.no_of_vehicles && <div><span className="font-medium text-slate-700">Vehicles:</span> {lead.no_of_vehicles}</div>}
+            {lead.remarks && <div className="line-clamp-2"><span className="font-medium text-slate-700">Remarks:</span> {lead.remarks}</div>}
+          </div>
+        )}
       </div>
       <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
         <Avatar name={lead.assigned_name || "?"} size={18} ring={false} />
@@ -69,6 +88,14 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
         <button data-testid={`quick-whatsapp-${lead.id}`} onClick={whatsapp}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-50 py-2 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-100 active:scale-95">
           <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+        </button>
+        <button data-testid={`quick-edit-${lead.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/leads/${lead.id}?edit=true`); }}
+          className="flex items-center justify-center rounded-lg bg-slate-100 p-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-95">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button data-testid={`quick-delete-${lead.id}`} onClick={(e) => { e.stopPropagation(); if(window.confirm("Are you sure you want to permanently delete this lead?")) deleteLead.mutate(lead.id); }}
+          className="flex items-center justify-center rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-600 transition hover:bg-red-100 active:scale-95">
+          <Trash className="h-3.5 w-3.5" />
         </button>
       </div>
     </motion.div>
