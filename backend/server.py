@@ -199,7 +199,7 @@ class MessageIn(BaseModel):
     text: str
     direction: str = "outgoing"
 
-STATUSES = ["new", "contacted", "interested", "follow_up", "converted", "lost"]
+STATUSES = ["new", "contacted", "rnr", "interested", "follow_up", "converted", "lost"]
 
 # ---------------------------------------------------------------------------
 # Activity logger
@@ -413,6 +413,13 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     assigned = None
     if body.assigned_to:
         assigned = await db.users.find_one({"id": body.assigned_to})
+    elif not is_manager(user):
+        # Auto-assign to the creator if they are not a manager
+        assigned = user
+
+    actual_assigned_to = assigned["id"] if assigned else None
+    actual_assigned_name = assigned["name"] if assigned else None
+
     lead = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user),
         "name": body.name, "company": body.company or "",
@@ -420,7 +427,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         "whatsapp": body.whatsapp or body.phone,
         "email": body.email or "", "location": body.location or "", "product": body.product or "",
         "source": body.source, "status": body.status, "priority": body.priority,
-        "assigned_to": body.assigned_to, "assigned_name": assigned["name"] if assigned else None,
+        "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
         "value": body.value, "notes": body.notes or "", "next_followup": None,
         "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
         "created_at": now_iso(), "updated_at": now_iso(),
@@ -1268,7 +1275,7 @@ async def seed():
     for i in range(72):
         name = random.choice(COMPANIES) if random.random() > 0.4 else f"{random.choice(FIRST_NAMES)} {random.choice(FIRST_NAMES)}"
         member = random.choice(sales_team)
-        status = random.choices(STATUSES, weights=[28, 20, 16, 14, 12, 10])[0]
+        status = random.choices(STATUSES, weights=[25, 20, 10, 15, 10, 10, 10])[0]
         created = now - timedelta(days=random.randint(0, 9), hours=random.randint(0, 23))
         phone = f"+91 9{random.randint(100000000, 999999999)}"
         lead = {

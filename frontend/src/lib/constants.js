@@ -4,15 +4,16 @@ import {
 } from "lucide-react";
 
 export const STATUS_META = {
-  new:        { label: "New",        dot: "#0EA5E9", text: "text-sky-700",     bg: "bg-sky-50",     ring: "ring-sky-200",     bar: "bg-sky-500" },
-  contacted:  { label: "Contacted",  dot: "#6366F1", text: "text-indigo-700",  bg: "bg-indigo-50",  ring: "ring-indigo-200",  bar: "bg-indigo-500" },
-  interested: { label: "Interested", dot: "#8B5CF6", text: "text-violet-700",  bg: "bg-violet-50",  ring: "ring-violet-200",  bar: "bg-violet-500" },
-  follow_up:  { label: "Follow-up",  dot: "#F59E0B", text: "text-amber-700",   bg: "bg-amber-50",   ring: "ring-amber-200",   bar: "bg-amber-500" },
-  converted:  { label: "Converted",  dot: "#10B981", text: "text-emerald-700", bg: "bg-emerald-50", ring: "ring-emerald-200", bar: "bg-emerald-500" },
-  lost:       { label: "Lost",       dot: "#EF4444", text: "text-red-700",     bg: "bg-red-50",     ring: "ring-red-200",     bar: "bg-red-500" },
+  new:        { label: "New",               dot: "#0EA5E9", text: "text-sky-700",     bg: "bg-sky-50",     ring: "ring-sky-200",     bar: "bg-sky-500" },
+  contacted:  { label: "Contacted",         dot: "#6366F1", text: "text-indigo-700",  bg: "bg-indigo-50",  ring: "ring-indigo-200",  bar: "bg-indigo-500" },
+  rnr:        { label: "Ring Not Response", dot: "#94A3B8", text: "text-slate-700",   bg: "bg-slate-100",  ring: "ring-slate-200",   bar: "bg-slate-500" },
+  interested: { label: "Interested",        dot: "#8B5CF6", text: "text-violet-700",  bg: "bg-violet-50",  ring: "ring-violet-200",  bar: "bg-violet-500" },
+  follow_up:  { label: "Follow-up",         dot: "#F59E0B", text: "text-amber-700",   bg: "bg-amber-50",   ring: "ring-amber-200",   bar: "bg-amber-500" },
+  converted:  { label: "Converted",         dot: "#10B981", text: "text-emerald-700", bg: "bg-emerald-50", ring: "ring-emerald-200", bar: "bg-emerald-500" },
+  lost:       { label: "Lost",              dot: "#EF4444", text: "text-red-700",     bg: "bg-red-50",     ring: "ring-red-200",     bar: "bg-red-500" },
 };
 
-export const STAGES = ["new", "contacted", "interested", "follow_up", "converted", "lost"];
+export const STAGES = ["new", "contacted", "rnr", "interested", "follow_up", "converted", "lost"];
 
 export const PRIORITY_META = {
   high:   { label: "High",   text: "text-red-700",    bg: "bg-red-50" },
