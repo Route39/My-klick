@@ -2,19 +2,22 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, KanbanSquare, CalendarClock, UserCheck, BarChart3,
-  Search, Plus, LogOut, Menu, MoreHorizontal, Zap,
+  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { AddDriverDialog } from "@/components/AddDriverDialog";
+import { ProfileDialog } from "@/components/ProfileDialog";
+import { Settings } from "lucide-react";
 import { Avatar } from "@/components/InitialsAvatar";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/leads", label: "Leads", icon: Users },
+  { to: "/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/followups", label: "Follow-ups", icon: CalendarClock },
   { to: "/customers", label: "Customers", icon: UserCheck },
@@ -23,6 +26,7 @@ const NAV = [
 const DRIVER_NAV = [
   { to: "/drivers", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/drivers/leads", label: "Leads", icon: Users },
+  { to: "/drivers/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
   { to: "/drivers/customers", label: "Customers", icon: UserCheck },
@@ -42,6 +46,7 @@ export default function AppShell() {
   const currentSegment = location.pathname.startsWith("/drivers") ? "driver" : "investor";
   const [searchOpen, setSearchOpen] = useState(false);
   const [addState, setAddState] = useState({ open: false, status: "new" });
+  const [profileOpen, setProfileOpen] = useState(false);
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const navItems = NAV;
   const driverNavItems = DRIVER_NAV;
@@ -120,6 +125,7 @@ export default function AppShell() {
                   )}>
                   <BarChart3 className="h-[18px] w-[18px]" /> Team
                 </NavLink>
+
               </>
             )}
           </nav>
@@ -130,6 +136,10 @@ export default function AppShell() {
                 <div className="truncate text-sm font-semibold text-slate-900">{user?.name}</div>
                 <div className="truncate text-xs capitalize text-slate-400">{user?.role?.replace("_", " ")}</div>
               </div>
+              <button data-testid="profile-btn" onClick={() => setProfileOpen(true)}
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-500">
+                <Settings className="h-4 w-4" />
+              </button>
               <button data-testid="logout-btn" onClick={() => { logout(); navigate("/login"); }}
                 className="rounded-lg p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500">
                 <LogOut className="h-4 w-4" />
@@ -193,6 +203,7 @@ export default function AppShell() {
         ) : (
           <AddLeadDialog open={addState.open} onOpenChange={(v) => setAddState((s) => ({ ...s, open: v }))} defaultStatus={addState.status} />
         )}
+        <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       </div>
     </CallProvider>
   );

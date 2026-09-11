@@ -306,7 +306,7 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
 
 @api.put("/team/{user_id}")
 async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = Depends(get_current_user)):
-    if not is_manager(user):
+    if not is_manager(user) and user["id"] != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = {
@@ -352,9 +352,19 @@ async def team_performance(user: dict = Depends(get_current_user)):
 async def list_leads(
     status: Optional[str] = None, exclude_status: Optional[str] = None, source: Optional[str] = None,
     assigned_to: Optional[str] = None, q: Optional[str] = None, segment: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    date_from: Optional[str] = None, date_to: Optional[str] = None, user: dict = Depends(get_current_user),
 ):
     base = {}
+    
+    if date_from or date_to:
+        created_filter = {}
+        if date_from:
+            created_filter["$gte"] = date_from + "T00:00:00.000Z"
+        if date_to:
+            created_filter["$lte"] = date_to + "T23:59:59.999Z"
+        if created_filter:
+            base["created_at"] = created_filter
+
     if segment:
         base["segment"] = segment
     if status:
@@ -605,9 +615,16 @@ async def lead_followups(lead_id: str, user: dict = Depends(get_current_user)):
 async def initiate_call(lead_id: str, user: dict = Depends(get_current_user)):
     lead = await lead_or_403(lead_id, user)
     adapter = comm.get_adapter()
+    agent_phone = user.get("phone")
+    if not agent_phone or agent_phone.strip() == "":
+        raise HTTPException(status_code=400, detail="Please add your number on your profile")
+
     try:
+        # Remove spaces, dashes, parentheses to ensure Exotel accepts it perfectly
+        agent_phone = "".join([c for c in agent_phone if c.isdigit() or c == "+"])
+        
         result = await adapter.initiate_call(
-            from_number=os.environ.get("EXOTEL_VIRTUAL_NUMBER") or None,
+            from_number=agent_phone,
             to_number=lead["phone"], custom_field=lead_id,
         )
     except comm.CommunicationError:
@@ -616,9 +633,10 @@ async def initiate_call(lead_id: str, user: dict = Depends(get_current_user)):
 
     call = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead_id,
+        "segment": lead.get("segment", "investor"),
         "provider": adapter.provider, "provider_call_id": result.get("provider_call_id"),
         "direction": "outgoing", "status": result.get("status", "initiated"),
-        "from_number": os.environ.get("EXOTEL_VIRTUAL_NUMBER", ""), "to_number": lead["phone"],
+        "from_number": agent_phone, "to_number": lead["phone"],
         "duration_seconds": 0, "recording_url": None,
         "user_id": user["id"], "user_name": user["name"],
         "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
@@ -645,6 +663,7 @@ async def initiate_ivr(lead_id: str, user: dict = Depends(get_current_user)):
 
     call = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead_id,
+        "segment": lead.get("segment", "investor"),
         "provider": adapter.provider, "provider_call_id": result.get("provider_call_id"),
         "direction": "outgoing-ivr", "status": result.get("status", "initiated"),
         "from_number": os.environ.get("EXOTEL_VIRTUAL_NUMBER", ""), "to_number": lead["phone"],
@@ -671,6 +690,16 @@ async def complete_call(call_id: str, body: CallCompleteIn, user: dict = Depends
         await log_activity("call", lead, user, f"completed a {call['direction']} call",
                            {"duration": f"{mins}m {secs}s", "status": status,
                             "duration_seconds": body.duration_seconds})
+        
+        # Auto-update lead status
+        new_status = lead.get("status")
+        if body.duration_seconds == 0:
+            new_status = "Ring Not Response"
+        elif body.duration_seconds > 0 and lead.get("status") in ("New", "Ring Not Response"):
+            new_status = "Contacted"
+        
+        if new_status != lead.get("status"):
+            await db.leads.update_one({"id": lead["id"]}, {"$set": {"status": new_status, "updated_at": now_iso()}})
         await db.calls.update_one({"id": call_id}, {"$set": {"activity_logged": True}})
     new = await db.calls.find_one({"id": call_id})
     return clean(new)
@@ -904,6 +933,68 @@ async def webhook_whatsapp(request: Request):
         await log_activity("whatsapp", lead, {"id": None, "name": "Lead"}, "sent an incoming WhatsApp message", {"text": text[:60]})
     await log_integration("whatsapp_inbound", {"provider_message_id": msg_id, "matched": bool(lead)})
     return {"ok": True}
+
+class ManualCallIn(BaseModel):
+    from_number: str
+    to_number: str
+    segment: Optional[str] = None
+
+@api.get("/exotel/calls")
+async def get_exotel_calls(
+    segment: Optional[str] = None, 
+    date_from: Optional[str] = None, 
+    date_to: Optional[str] = None,
+    staff_id: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    q = {"provider": "exotel", "organization_id": org_of(user)}
+    
+    if segment:
+        q["segment"] = segment
+        
+    if date_from or date_to:
+        created_filter = {}
+        if date_from:
+            created_filter["$gte"] = date_from + "T00:00:00.000Z"
+        if date_to:
+            created_filter["$lte"] = date_to + "T23:59:59.999Z"
+        if created_filter:
+            q["created_at"] = created_filter
+
+    if is_manager(user):
+        if staff_id and staff_id != "all":
+            q["user_id"] = staff_id
+    else:
+        q["user_id"] = user["id"]
+        
+    calls = await db.calls.find(q).sort("created_at", -1).to_list(1000)
+    return [clean(c) for c in calls]
+
+@api.post("/exotel/manual_call")
+async def initiate_manual_call(body: ManualCallIn, user: dict = Depends(get_current_user)):
+    adapter = comm.get_adapter()
+    from_num = "".join([c for c in body.from_number if c.isdigit() or c == "+"])
+    to_num = "".join([c for c in body.to_number if c.isdigit() or c == "+"])
+    try:
+        result = await adapter.initiate_call(
+            from_number=from_num,
+            to_number=to_num,
+            custom_field="manual"
+        )
+    except comm.CommunicationError as e:
+        raise HTTPException(status_code=502, detail=f"Exotel error: {str(e)}")
+
+    call = {
+        "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": None,
+        "provider": adapter.provider, "provider_call_id": result.get("provider_call_id"),
+        "direction": "outgoing", "status": result.get("status", "initiated"),
+        "from_number": body.from_number, "to_number": body.to_number,
+        "duration_seconds": 0, "recording_url": None,
+        "user_id": user["id"], "user_name": user["name"],
+        "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
+    }
+    await db.calls.insert_one(dict(call))
+    return clean(call)
 
 @api.get("/webhooks/exotel/dynamic-connect")
 async def exotel_dynamic_connect(request: Request):

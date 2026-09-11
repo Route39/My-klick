@@ -96,7 +96,7 @@ class ExotelAdapter:
         self.sid = os.environ["EXOTEL_ACCOUNT_SID"]
         self.voice_base = "https://" + os.environ.get("EXOTEL_VOICE_SUBDOMAIN", "ccm-api.exotel.com")
         self.wa_base = "https://" + os.environ.get("EXOTEL_SUBDOMAIN", "api.exotel.com")
-        self.virtual = os.environ.get("EXOTEL_VIRTUAL_NUMBER")
+        self.virtual = os.environ.get("EXOTEL_EXOPHONE")
         self.wa_number = os.environ.get("EXOTEL_WHATSAPP_NUMBER")
         self.callback = os.environ.get("PUBLIC_API_BASE", "").rstrip("/")
 
@@ -114,7 +114,7 @@ class ExotelAdapter:
             payload["StatusCallbackContentType"] = "application/json"
 
         async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.post(f"{self.voice_base}/v1/Accounts/{self.sid}/Calls/connect", auth=(self.key, self.token), data=payload)
+            r = await c.post(f"{self.voice_base}/v1/Accounts/{self.sid}/Calls/connect.json", auth=(self.key, self.token), data=payload)
             if r.status_code >= 400:
                 raise CommunicationError(f"Exotel call error {r.status_code}: {r.text}")
             data = r.json()
@@ -137,7 +137,7 @@ class ExotelAdapter:
             payload["StatusCallbackContentType"] = "application/json"
 
         async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.post(f"{self.voice_base}/v1/Accounts/{self.sid}/Calls/connect", auth=(self.key, self.token), data=payload)
+            r = await c.post(f"{self.voice_base}/v1/Accounts/{self.sid}/Calls/connect.json", auth=(self.key, self.token), data=payload)
             if r.status_code >= 400:
                 raise CommunicationError(f"Exotel IVR call error {r.status_code}: {r.text}")
             data = r.json()

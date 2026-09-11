@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
-import { LayoutGrid, List as ListIcon, KanbanSquare, Rocket, Filter, Phone, MessageCircle, Clock, Trash, Pencil } from "lucide-react";
+import { LayoutGrid, List as ListIcon, KanbanSquare, Rocket, Filter, Phone, MessageCircle, Calendar as CalendarIcon, User, Clock, Trash, Pencil } from "lucide-react";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
 import { motion } from "framer-motion";
 import api from "@/lib/api";
 import { LeadCard } from "@/components/LeadCard";
@@ -11,6 +14,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ListSkeleton } from "@/components/Skeletons";
 import { STAGES, STATUS_META, formatINR, formatClock, formatDay } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -24,15 +28,41 @@ const VIEWS = [
 ];
 
 export default function Leads({ segment = "investor" }) {
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const { openAdd } = useOutletContext();
   const [view, setView] = useState("list");
+  const isManager = ["admin", "team_leader"].includes(user?.role);
+  
   const status = params.get("status") || "";
+  
+  const assigned_to = params.get("assigned_to") || "";
+
+  const { data: team = [] } = useQuery({
+    queryKey: ["team"],
+    queryFn: async () => (await api.get("/team")).data,
+    enabled: isManager,
+  });
+
+  const date_from = params.get("date_from") || "";
+  const date_to = params.get("date_to") || "";
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["leads", status],
+    queryKey: ["leads", segment, status, date_from, date_to, assigned_to],
     queryFn: async () => {
-      const queryParams = status ? `?status=${status}` : `?exclude_status=follow_up`;
+      let queryParams = `?segment=${segment}`;
+      
+      // If status explicitly "all", do not filter or exclude anything!
+      if (status && status !== "all") {
+        queryParams += `&status=${status}`;
+      } else if (!status) {
+        queryParams += `&exclude_status=follow_up`;
+      }
+      
+      if (date_from) queryParams += `&date_from=${date_from}`;
+      if (date_to) queryParams += `&date_to=${date_to}`;
+      if (assigned_to) queryParams += `&assigned_to=${assigned_to}`;
+      
       return (await api.get(`/leads${queryParams}`)).data;
     },
     refetchInterval: 15000,
@@ -40,7 +70,24 @@ export default function Leads({ segment = "investor" }) {
   });
 
   const setStatus = (s) => {
-    if (s === "all") params.delete("status"); else params.set("status", s);
+    // We set 'all' explicitly so we know the user chose it.
+    params.set("status", s);
+    setParams(params);
+  };
+  
+  const setDateRange = (range) => {
+    if (!range) {
+        params.delete("date_from");
+        params.delete("date_to");
+    } else {
+        if (range.from) params.set("date_from", format(range.from, "yyyy-MM-dd"));
+        if (range.to) params.set("date_to", format(range.to, "yyyy-MM-dd"));
+    }
+    setParams(params);
+  };
+  
+  const setAssignedTo = (a) => {
+    if (a === "all") params.delete("assigned_to"); else params.set("assigned_to", a);
     setParams(params);
   };
 
@@ -51,7 +98,46 @@ export default function Leads({ segment = "investor" }) {
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Leads</h1>
           <p className="mt-1 text-slate-500">{leads.length} leads {status && `· ${STATUS_META[status]?.label}`}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {isManager && (
+            <Select value={assigned_to || "all"} onValueChange={setAssignedTo}>
+              <SelectTrigger className="w-36 rounded-xl">
+                <User className="mr-1 h-3.5 w-3.5 text-slate-400" /><SelectValue placeholder="All Staff" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Staff</SelectItem>
+                {team.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          
+          <Popover>
+            <PopoverTrigger className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50">
+              <CalendarIcon className="h-4 w-4 text-slate-400" />
+              {date_from ? (
+                date_to ? `${format(new Date(date_from), "LLL dd, y")} - ${format(new Date(date_to), "LLL dd, y")}` : format(new Date(date_from), "LLL dd, y")
+              ) : (
+                "All Time"
+              )}
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <CalendarComponent
+                initialFocus
+                mode="range"
+                defaultMonth={date_from ? new Date(date_from) : new Date()}
+                selected={{
+                  from: date_from ? new Date(date_from) : undefined,
+                  to: date_to ? new Date(date_to) : undefined,
+                }}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+              />
+              <div className="border-t p-3 text-right">
+                <button onClick={() => setDateRange(undefined)} className="text-xs font-medium text-slate-500 hover:text-slate-900">Clear dates</button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Select value={status || "all"} onValueChange={setStatus}>
             <SelectTrigger data-testid="leads-status-filter" className="w-40 rounded-xl">
               <Filter className="mr-1 h-3.5 w-3.5 text-slate-400" /><SelectValue />

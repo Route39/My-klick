@@ -19,6 +19,7 @@ import DriverCustomers from "./pages/drivers/DriverCustomers";
 
 import CustomerDetail from "@/pages/CustomerDetail";
 import Team from "@/pages/Team";
+import CallLogs from "@/pages/CallLogs";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -57,9 +58,11 @@ export default function App() {
             <Route path="/customers" element={<Customers segment="investor" />} />
             <Route path="/customers/:id" element={<CustomerDetail />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/calls" element={<CallLogs segment="investor" />} />
 
             {/* Driver Routes */}
             <Route path="/drivers" element={<DriverDashboard />} />
+            <Route path="/drivers/calls" element={<CallLogs segment="driver" />} />
             <Route path="/drivers/leads" element={<DriverLeads />} />
             <Route path="/drivers/leads/:id" element={<LeadProfile />} />
             <Route path="/drivers/pipeline" element={<DriverPipeline />} />
