@@ -23,17 +23,18 @@ const VIEWS = [
   { id: "pipeline", icon: KanbanSquare, label: "Pipeline" },
 ];
 
-export default function Leads({ segment = "investor" }) {
+export default function DriverLeads() {
+  const segment = "driver";
   const [params, setParams] = useSearchParams();
   const { openAdd } = useOutletContext();
   const [view, setView] = useState("list");
   const status = params.get("status") || "";
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["leads", status],
+    queryKey: ["leads", status, "driver"],
     queryFn: async () => {
-      const queryParams = status ? `?status=${status}` : `?exclude_status=follow_up`;
-      return (await api.get(`/leads${queryParams}`)).data;
+      const params = status ? { status, segment: "driver" } : { exclude_status: "follow_up", segment: "driver" };
+      return (await api.get("/leads", { params })).data;
     },
     refetchInterval: 15000,
     placeholderData: (prev) => prev,

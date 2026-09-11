@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/command";
 import { User, UserCheck } from "lucide-react";
 
-export function GlobalSearch({ open, onOpenChange }) {
+export function GlobalSearch({ open, onOpenChange, segment }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState({ leads: [], customers: [] });
   const navigate = useNavigate();
@@ -16,7 +16,7 @@ export function GlobalSearch({ open, onOpenChange }) {
   useEffect(() => {
     if (!q) { setRes({ leads: [], customers: [] }); return; }
     const t = setTimeout(async () => {
-      try { setRes((await api.get(`/search?q=${encodeURIComponent(q)}`)).data); } catch (e) {}
+      try { setRes((await api.get(`/search?q=${encodeURIComponent(q)}&segment=${segment || ""}`)).data); } catch (e) {}
     }, 180);
     return () => clearTimeout(t);
   }, [q]);
@@ -32,7 +32,7 @@ export function GlobalSearch({ open, onOpenChange }) {
         {res.leads.length > 0 && (
           <CommandGroup heading="Leads">
             {res.leads.map((l) => (
-              <CommandItem key={l.id} value={`lead-${l.id}-${l.name}`} onSelect={() => go(`/leads/${l.id}`)}
+              <CommandItem key={l.id} value={`lead-${l.id}-${l.name}`} onSelect={() => go(segment === "driver" ? `/drivers/leads/${l.id}` : `/leads/${l.id}`)}
                 className="gap-3 py-2.5">
                 <Avatar name={l.name} size={32} />
                 <div className="flex-1">

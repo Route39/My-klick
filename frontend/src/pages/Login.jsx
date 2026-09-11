@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState("admin@route39.in");
-  const [password, setPassword] = useState("Route@39");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -67,13 +67,13 @@ export default function Login() {
           <form onSubmit={submit} className="mt-8 space-y-4" autoComplete="off">
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-email" type="text" name="myklick_email_field" id="myklick_email_field" value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="you@company.com or +91 99999..." required autoComplete="new-password" spellCheck="false" className="rounded-xl py-6 pl-10" />
+              <Input data-testid="login-email" type="text" name="email_nope" id="myklick_email_field" value={username} onChange={(e) => setUsername(e.target.value)}
+                placeholder="you@company.com or +91 99999..." required autoComplete="off" spellCheck="false" className="rounded-xl py-6 pl-10" />
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-password" type={showPassword ? "text" : "password"} name="myklick_password_field" id="myklick_password_field" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password" required autoComplete="new-password" spellCheck="false" className="rounded-xl py-6 pl-10 pr-12" />
+              <Input data-testid="login-password" type={showPassword ? "text" : "password"} name="password_nope" id="myklick_password_field" value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password" required autoComplete="off" spellCheck="false" className="rounded-xl py-6 pl-10 pr-12" />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -84,9 +84,6 @@ export default function Login() {
               {loading ? "Signing in…" : <>Sign in <ArrowRight className="ml-1 h-4 w-4 transition group-hover:translate-x-1" /></>}
             </Button>
           </form>
-          <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-center text-xs text-slate-500">
-            Demo admin: <b>admin@route39.in</b> · <b>Route@39</b>
-          </p>
         </motion.div>
       </div>
     </div>

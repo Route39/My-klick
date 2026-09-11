@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Rocket } from "lucide-react";
 
-export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new" }) {
+export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segment = "investor" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -27,7 +27,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new" }) {
   });
 
   const create = useMutation({
-    mutationFn: async () => (await api.post("/leads", {
+    mutationFn: async () => (await api.post("/leads", { segment,
       ...form,
       value: Number(form.value) || 0,
       status: defaultStatus,

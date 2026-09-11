@@ -43,11 +43,12 @@ function greeting() {
   return "Good evening";
 }
 
-export default function Dashboard({ segment = "investor" }) {
+export default function DriverDashboard() {
+  const segment = "driver";
   const { user } = useAuth();
   const { data: stats, isLoading } = useQuery({ queryKey: ["stats", segment], queryFn: async () => (await api.get("/dashboard/stats", { params: { segment } })).data });
-  const { data: activities = [] } = useQuery({ queryKey: ["activities", segment], queryFn: async () => (await api.get("/activities", { params: { limit: 8, segment } })).data });
-  const { data: followups = [] } = useQuery({ queryKey: ["followups", "today", segment], queryFn: async () => (await api.get("/followups", { params: { scope: "today", segment } })).data });
+  const { data: activities = [] } = useQuery({ queryKey: ["activities", segment], queryFn: async () => (await api.get("/activities", { params: { limit: 8, segment: "driver" } })).data });
+  const { data: followups = [] } = useQuery({ queryKey: ["followups", "today", segment], queryFn: async () => (await api.get("/followups", { params: { scope: "today", segment: "driver" } })).data });
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -58,7 +59,7 @@ export default function Dashboard({ segment = "investor" }) {
         <p className="mt-1.5 text-slate-500">Here's what's happening with your sales today.</p>
       </motion.div>
 
-      <Briefing />
+      <Briefing segment="driver" />
 
       {/* Snapshot cards */}
       {isLoading || !stats ? (

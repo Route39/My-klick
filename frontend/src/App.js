@@ -9,7 +9,14 @@ import Leads from "@/pages/Leads";
 import Pipeline from "@/pages/Pipeline";
 import LeadProfile from "@/pages/LeadProfile";
 import FollowUps from "@/pages/FollowUps";
-import Customers from "@/pages/Customers";
+import Customers from "./pages/Customers";
+
+import DriverDashboard from "./pages/drivers/DriverDashboard";
+import DriverLeads from "./pages/drivers/DriverLeads";
+import DriverPipeline from "./pages/drivers/DriverPipeline";
+import DriverFollowUps from "./pages/drivers/DriverFollowUps";
+import DriverCustomers from "./pages/drivers/DriverCustomers";
+
 import CustomerDetail from "@/pages/CustomerDetail";
 import Team from "@/pages/Team";
 import "@/App.css";
@@ -42,15 +49,25 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route element={<Protected><AppShell /></Protected>}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/leads" element={<Leads />} />
+            <Route path="/" element={<Dashboard segment="investor" />} />
+            <Route path="/leads" element={<Leads segment="investor" />} />
             <Route path="/leads/:id" element={<LeadProfile />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/followups" element={<FollowUps />} />
-            <Route path="/customers" element={<Customers />} />
+            <Route path="/pipeline" element={<Pipeline segment="investor" />} />
+            <Route path="/followups" element={<FollowUps segment="investor" />} />
+            <Route path="/customers" element={<Customers segment="investor" />} />
             <Route path="/customers/:id" element={<CustomerDetail />} />
             <Route path="/team" element={<Team />} />
+
+            {/* Driver Routes */}
+            <Route path="/drivers" element={<DriverDashboard />} />
+            <Route path="/drivers/leads" element={<DriverLeads />} />
+            <Route path="/drivers/leads/:id" element={<LeadProfile />} />
+            <Route path="/drivers/pipeline" element={<DriverPipeline />} />
+            <Route path="/drivers/followups" element={<DriverFollowUps />} />
+            <Route path="/drivers/customers" element={<DriverCustomers />} />
+            <Route path="/drivers/customers/:id" element={<CustomerDetail />} />
           </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

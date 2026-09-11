@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, KanbanSquare, CalendarClock, UserCheck, BarChart3,
   Search, Plus, LogOut, Menu, MoreHorizontal, Zap,
@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
+import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { Avatar } from "@/components/InitialsAvatar";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,14 @@ const NAV = [
   { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/followups", label: "Follow-ups", icon: CalendarClock },
   { to: "/customers", label: "Customers", icon: UserCheck },
-  { to: "/team", label: "Team", icon: BarChart3 },
+];
+
+const DRIVER_NAV = [
+  { to: "/drivers", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/drivers/leads", label: "Leads", icon: Users },
+  { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
+  { to: "/drivers/customers", label: "Customers", icon: UserCheck },
 ];
 
 const MOBILE_NAV = [
@@ -30,10 +38,13 @@ const MOBILE_NAV = [
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentSegment = location.pathname.startsWith("/drivers") ? "driver" : "investor";
   const [searchOpen, setSearchOpen] = useState(false);
   const [addState, setAddState] = useState({ open: false, status: "new" });
   const isManager = ["admin", "team_leader"].includes(user?.role);
-  const navItems = NAV.filter((n) => n.label !== "Team" || isManager);
+  const navItems = NAV;
+  const driverNavItems = DRIVER_NAV;
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -57,8 +68,16 @@ export default function AppShell() {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/30">
               <Zap className="h-5 w-5" fill="currentColor" />
             </div>
-            <span className="font-display text-xl font-extrabold tracking-tight text-slate-900">MyKlick</span>
+            <span className="font-display text-xl font-extrabold tracking-tight text-slate-900">Myklick</span>
           </div>
+
+          {/* Section Header */}
+          <div className="px-6 pb-2 pt-2">
+            <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
+              INVESTOR
+            </span>
+          </div>
+
           <nav className="flex-1 space-y-1 px-3">
             {navItems.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-${n.label.toLowerCase()}`}
@@ -69,6 +88,40 @@ export default function AppShell() {
                 <n.icon className="h-[18px] w-[18px]" /> {n.label}
               </NavLink>
             ))}
+
+            {/* Drivers Section */}
+            <div className="px-3 pb-2 pt-6">
+              <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
+                DRIVERS
+              </span>
+            </div>
+            
+            {DRIVER_NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-driver-${n.label.toLowerCase()}`}
+                className={({ isActive }) => cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                  isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}>
+                <n.icon className="h-[18px] w-[18px]" /> {n.label}
+              </NavLink>
+            ))}
+
+            {isManager && (
+              <>
+                <div className="px-3 pb-2 pt-6">
+                  <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
+                    STAFF
+                  </span>
+                </div>
+                <NavLink to="/team" data-testid="nav-team"
+                  className={({ isActive }) => cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                    isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  )}>
+                  <BarChart3 className="h-[18px] w-[18px]" /> Team
+                </NavLink>
+              </>
+            )}
           </nav>
           <div className="border-t border-slate-100 p-3">
             <div className="flex items-center gap-3 rounded-xl px-2 py-2">
@@ -93,17 +146,29 @@ export default function AppShell() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
                 <Zap className="h-4 w-4" fill="currentColor" />
               </div>
-              <span className="font-display text-lg font-extrabold text-slate-900">MyKlick</span>
+              <span className="font-display text-lg font-extrabold text-slate-900">Myklick</span>
+            </div>
+            {/* Segment badge in header */}
+            <div className="hidden lg:flex items-center">
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                  currentSegment === "driver"
+                    ? "bg-orange-100 text-orange-600"
+                    : "bg-indigo-100 text-indigo-600"
+                }`}
+              >
+                {currentSegment === "driver" ? "Driver" : "Investor"}
+              </span>
             </div>
             <button data-testid="open-search-btn" onClick={() => setSearchOpen(true)}
-              className="ml-auto flex items-center gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-300 sm:w-72 lg:ml-0">
+              className="ml-auto flex items-center gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-300 sm:w-72 lg:ml-3">
               <Search className="h-4 w-4" />
-              <span className="hidden sm:inline">Search MyKlick…</span>
+              <span className="hidden sm:inline">Search Myklick…</span>
               <kbd className="ml-auto hidden rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline">⌘K</kbd>
             </button>
             <button data-testid="quick-add-lead-btn" onClick={() => setAddState({ open: true, status: "new" })}
               className="ml-auto flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95 lg:ml-3">
-              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Lead</span>
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{currentSegment === "driver" ? "Driver" : "Lead"}</span>
             </button>
           </header>
 
@@ -122,8 +187,12 @@ export default function AppShell() {
           {MOBILE_NAV.slice(2).map((n) => <MobileTab key={n.to} {...n} />)}
         </nav>
 
-        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
-        <AddLeadDialog open={addState.open} onOpenChange={(v) => setAddState((s) => ({ ...s, open: v }))} defaultStatus={addState.status} />
+        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} segment={currentSegment} />
+        {currentSegment === "driver" ? (
+          <AddDriverDialog open={addState.open} onOpenChange={(v) => setAddState((s) => ({ ...s, open: v }))} defaultStatus={addState.status} />
+        ) : (
+          <AddLeadDialog open={addState.open} onOpenChange={(v) => setAddState((s) => ({ ...s, open: v }))} defaultStatus={addState.status} />
+        )}
       </div>
     </CallProvider>
   );

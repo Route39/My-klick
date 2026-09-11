@@ -8,13 +8,14 @@ import { ListSkeleton } from "@/components/Skeletons";
 import { STAGES, STATUS_META, formatINR } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-export default function Pipeline({ segment = "investor" }) {
+export default function DriverPipeline() {
+  const segment = "driver";
   const qc = useQueryClient();
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["leads", ""], queryFn: async () => (await api.get("/leads")).data,
+    queryKey: ["leads", "", "driver"], queryFn: async () => (await api.get("/leads", { params: { segment: "driver" } })).data,
     refetchInterval: 15000,
     placeholderData: (prev) => prev,
   });
@@ -22,8 +23,8 @@ export default function Pipeline({ segment = "investor" }) {
   const move = useMutation({
     mutationFn: async ({ id, status }) => (await api.patch(`/leads/${id}/stage`, { status })).data,
     onMutate: async ({ id, status }) => {
-      await qc.cancelQueries({ queryKey: ["leads", ""] });
-      const prev = qc.getQueryData(["leads", ""]);
+      await qc.cancelQueries({ queryKey: ["leads", "", "driver"] });
+      const prev = qc.getQueryData(["leads", "", "driver"]);
       // Optimistic update: move card immediately, no flicker
       qc.setQueryData(["leads", ""], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
       return { prev };

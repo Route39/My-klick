@@ -14,7 +14,10 @@ import jwt
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, BackgroundTasks, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, BackgroundTasks, Response, UploadFile, File
+from fastapi.staticfiles import StaticFiles
+import shutil
+import uuid
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -169,11 +172,16 @@ class LeadIn(BaseModel):
     source: str = "manual"
     status: str = "new"
     priority: str = "medium"
+    segment: str = "investor"
     assigned_to: Optional[str] = None
     value: float = 0
     notes: Optional[str] = ""
     no_of_vehicles: Optional[str] = ""
     remarks: Optional[str] = ""
+    rc: Optional[str] = ""
+    aadhaar_url: Optional[str] = ""
+    pan_url: Optional[str] = ""
+    license_url: Optional[str] = ""
 
 class StageIn(BaseModel):
     status: str
@@ -242,8 +250,12 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"$or": [{"email": username}, {"phone": username}]})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username, email or password")
-    token = create_access_token(user["id"], user.get("email", ""))
-    return {"token": token, "user": clean(user)}
+    u_id = user.get("id") or str(user.get("_id", ""))
+    token = create_access_token(u_id, user.get("email", ""))
+    cleaned = clean(user)
+    if "id" not in cleaned:
+        cleaned["id"] = u_id
+    return {"token": token, "user": cleaned}
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
@@ -314,17 +326,18 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
 async def team_performance(user: dict = Depends(get_current_user)):
     users = await db.users.find({"organization_id": org_of(user)}).to_list(200)
     if not is_manager(user):
-        users = [u for u in users if u["id"] == user["id"]]
+        users = [u for u in users if u.get("id") == user.get("id")]
     out = []
     for u in users:
-        leads = await db.leads.find({"assigned_to": u["id"]}).to_list(2000)
+        u_id = u.get("id") or str(u.get("_id", ""))
+        leads = await db.leads.find({"assigned_to": u_id}).to_list(2000)
         total = len(leads)
         contacted = len([l for l in leads if l.get("status") != "new"])
         converted = len([l for l in leads if l.get("status") == "converted"])
         value = sum(l.get("value", 0) for l in leads if l.get("status") == "converted")
         rate = round((converted / total) * 100) if total else 0
         out.append({
-            "id": u["id"], "name": u["name"], "role": u["role"], "avatar": u.get("avatar"),
+            "id": u_id, "name": u.get("name", "Unknown"), "role": u.get("role", "sales"), "avatar": u.get("avatar"),
             "phone": u.get("phone", ""), "email": u.get("email", ""),
             "leads": total, "contacted": contacted, "converted": converted,
             "value": value, "conversion_rate": rate,
@@ -338,10 +351,12 @@ async def team_performance(user: dict = Depends(get_current_user)):
 @api.get("/leads")
 async def list_leads(
     status: Optional[str] = None, exclude_status: Optional[str] = None, source: Optional[str] = None,
-    assigned_to: Optional[str] = None, q: Optional[str] = None,
+    assigned_to: Optional[str] = None, q: Optional[str] = None, segment: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     base = {}
+    if segment:
+        base["segment"] = segment
     if status:
         base["status"] = status
     elif exclude_status:
@@ -427,6 +442,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         "whatsapp": body.whatsapp or body.phone,
         "email": body.email or "", "location": body.location or "", "product": body.product or "",
         "source": body.source, "status": body.status, "priority": body.priority,
+        "segment": body.segment,
         "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
         "value": body.value, "notes": body.notes or "", "next_followup": None,
         "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
@@ -516,6 +532,7 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
                 "phone": lead["phone"], "whatsapp": lead.get("whatsapp", ""),
                 "email": lead.get("email", ""), "location": lead.get("location", ""),
                 "source": lead.get("source"), "value": lead.get("value", 0),
+                "segment": lead.get("segment"),
                 "assigned_to": lead.get("assigned_to"), "assigned_name": lead.get("assigned_name"),
                 "converted_by": user["name"], "converted_at": now_iso(),
             })
@@ -940,10 +957,14 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
     return clean(fu)
 
 @api.get("/followups")
-async def list_followups(scope: str = "all", user: dict = Depends(get_current_user)):
+async def list_followups(scope: str = "all", segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"status": "pending", "organization_id": org_of(user)}
     if not is_manager(user):
         base["assigned_to"] = user["id"]
+    if segment:
+        leads = await db.leads.find({"segment": segment}).to_list(None)
+        lead_ids = [l["id"] for l in leads]
+        base["lead_id"] = {"$in": lead_ids}
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
     now = datetime.now(timezone.utc)
     out = []
@@ -1022,10 +1043,15 @@ async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
 # Briefing
 # ---------------------------------------------------------------------------
 @api.get("/briefing")
-async def briefing(user: dict = Depends(get_current_user)):
+async def briefing(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
+    # Scope followups by segment if provided
     base = {"status": "pending", "organization_id": org_of(user)}
     if not is_manager(user):
         base["assigned_to"] = user["id"]
+    if segment:
+        seg_leads = await db.leads.find({"segment": segment, "organization_id": org_of(user)}).to_list(None)
+        base["lead_id"] = {"$in": [l["id"] for l in seg_leads]}
+    
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
     now = datetime.now(timezone.utc)
     today = now.date()
@@ -1039,7 +1065,10 @@ async def briefing(user: dict = Depends(get_current_user)):
         (overdue if due < now else today_list).append((due, f))
     today_only = [x for x in today_list if x[0].date() == today]
 
-    lead_scope = scope_leads(user, {"priority": "high", "status": {"$nin": ["converted", "lost"]}})
+    lead_scope = {"priority": "high", "status": {"$nin": ["converted", "lost"]}}
+    if segment:
+        lead_scope["segment"] = segment
+    lead_scope = scope_leads(user, lead_scope)
     high_leads = await db.leads.find(lead_scope).to_list(500)
 
     # Prioritise: overdue -> today -> high-priority interested leads.
@@ -1096,10 +1125,12 @@ async def briefing(user: dict = Depends(get_current_user)):
 # Customers
 # ---------------------------------------------------------------------------
 @api.get("/customers")
-async def list_customers(user: dict = Depends(get_current_user)):
+async def list_customers(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"organization_id": org_of(user)}
     if not is_manager(user):
         base["assigned_to"] = user["id"]
+    if segment:
+        base["segment"] = segment
     cs = await db.customers.find(base).sort("converted_at", -1).to_list(1000)
     return [clean(c) for c in cs]
 
@@ -1122,21 +1153,28 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
 # Activities / Search
 # ---------------------------------------------------------------------------
 @api.get("/activities")
-async def activities(limit: int = 20, user: dict = Depends(get_current_user)):
+async def activities(limit: int = 20, segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     q = {"organization_id": org_of(user)}
     if not is_manager(user):
         q["user_id"] = user["id"]
+    if segment:
+        seg_leads = await db.leads.find({"segment": segment, "organization_id": org_of(user)}).to_list(None)
+        seg_lead_ids = [l["id"] for l in seg_leads]
+        q["lead_id"] = {"$in": seg_lead_ids}
     acts = await db.activities.find(q).sort("created_at", -1).to_list(limit)
     return [clean(a) for a in acts]
 
 @api.get("/search")
-async def search(q: str, user: dict = Depends(get_current_user)):
+async def search(q: str, segment: str = "", user: dict = Depends(get_current_user)):
     if not q or len(q) < 1:
         return {"leads": [], "customers": []}
     regex = {"$regex": q, "$options": "i"}
     lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]})
-    leads = await db.leads.find(lead_q).to_list(10)
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
+    if segment:
+        lead_q["segment"] = segment
+        cust_q["segment"] = segment
+    leads = await db.leads.find(lead_q).to_list(10)
     if not is_manager(user):
         cust_q["assigned_to"] = user["id"]
     custs = await db.customers.find(cust_q).to_list(10)
@@ -1146,8 +1184,11 @@ async def search(q: str, user: dict = Depends(get_current_user)):
 # Dashboard
 # ---------------------------------------------------------------------------
 @api.get("/dashboard/stats")
-async def dashboard_stats(user: dict = Depends(get_current_user)):
-    all_leads = await db.leads.find(scope_leads(user)).to_list(5000)
+async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
+    base = {}
+    if segment:
+        base["segment"] = segment
+    all_leads = await db.leads.find(scope_leads(user, base)).to_list(5000)
     lead_ids = [l["id"] for l in all_leads]
     now = datetime.now(timezone.utc)
     today = now.date()
@@ -1164,7 +1205,7 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
     calls = await db.calls.find({"lead_id": {"$in": lead_ids}}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
-    fu_base = {"status": "pending", "organization_id": org_of(user)}
+    fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}
     if not is_manager(user):
         fu_base["assigned_to"] = user["id"]
     followups = await db.followups.find(fu_base).to_list(2000)
@@ -1415,11 +1456,23 @@ async def startup():
     await migrate()
 
 
+@api.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    os.makedirs("uploads", exist_ok=True)
+    ext = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = os.path.join("uploads", filename)
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    return {"url": f"/uploads/{filename}"}
+
 @api.get("/")
 async def root():
     return {"message": "MyKlick CRM API"}
 
 app.include_router(api)
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,

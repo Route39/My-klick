@@ -29,7 +29,7 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     e.stopPropagation();
     await api.post(`/leads/${lead.id}/whatsapp`, { text: "Hi, following up on your enquiry." });
     toast.success("WhatsApp sent ✓", { description: lead.name });
-    navigate(`/leads/${lead.id}?tab=whatsapp`);
+    navigate(lead.segment === "driver" ? `/drivers/leads/${lead.id}?tab=whatsapp` : `/leads/${lead.id}?tab=whatsapp`);
   };
   const call = (e) => { e.stopPropagation(); startCall(lead); };
 
@@ -42,7 +42,7 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.03, 0.3) }}
       data-testid={`lead-card-${lead.id}`}
-      onClick={() => navigate(`/leads/${lead.id}`)}
+      onClick={() => navigate(lead.segment === "driver" ? `/drivers/leads/${lead.id}` : `/leads/${lead.id}`)}
       className={cn(
         "group cursor-pointer rounded-2xl border border-slate-200/70 bg-white p-4 card-lift",
         lead.status === "lost" && "opacity-70", draggable && "active:cursor-grabbing"
@@ -64,11 +64,20 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           <SourceBadge source={lead.source} />
           {lead.value > 0 && <span className="font-display font-bold text-slate-900">{formatINR(lead.value)}</span>}
         </div>
-        {(lead.no_of_vehicles || lead.remarks) && (
-          <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-slate-500">
-            {lead.no_of_vehicles && <div><span className="font-medium text-slate-700">Vehicles:</span> {lead.no_of_vehicles}</div>}
-            {lead.remarks && <div className="line-clamp-2"><span className="font-medium text-slate-700">Remarks:</span> {lead.remarks}</div>}
-          </div>
+        {lead.segment === "driver" ? (
+          (lead.location || lead.rc) && (
+            <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-slate-500">
+              {lead.location && <div><span className="font-medium text-slate-700">Location:</span> {lead.location}</div>}
+              {lead.rc && <div><span className="font-medium text-slate-700">RC Available:</span> {lead.rc.toUpperCase()}</div>}
+            </div>
+          )
+        ) : (
+          (lead.no_of_vehicles || lead.remarks) && (
+            <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-slate-500">
+              {lead.no_of_vehicles && <div><span className="font-medium text-slate-700">Vehicles:</span> {lead.no_of_vehicles}</div>}
+              {lead.remarks && <div className="line-clamp-2"><span className="font-medium text-slate-700">Remarks:</span> {lead.remarks}</div>}
+            </div>
+          )
         )}
       </div>
       <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
@@ -89,7 +98,7 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-50 py-2 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-100 active:scale-95">
           <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
         </button>
-        <button data-testid={`quick-edit-${lead.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/leads/${lead.id}?edit=true`); }}
+        <button data-testid={`quick-edit-${lead.id}`} onClick={(e) => { e.stopPropagation(); navigate(lead.segment === "driver" ? `/drivers/leads/${lead.id}?edit=true` : `/leads/${lead.id}?edit=true`); }}
           className="flex items-center justify-center rounded-lg bg-slate-100 p-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-95">
           <Pencil className="h-3.5 w-3.5" />
         </button>

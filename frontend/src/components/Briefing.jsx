@@ -11,11 +11,11 @@ import { SourceBadge } from "@/components/Badges";
 import { formatClock, formatDay } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-export function Briefing() {
+export function Briefing({ segment = "investor" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { startCall } = useCall();
-  const { data, isLoading } = useQuery({ queryKey: ["briefing"], queryFn: async () => (await api.get("/briefing")).data });
+  const { data, isLoading } = useQuery({ queryKey: ["briefing", segment], queryFn: async () => (await api.get("/briefing", { params: { segment } })).data });
 
   const complete = useMutation({
     mutationFn: async (fid) => (await api.patch(`/followups/${fid}/complete`)).data,
@@ -55,7 +55,7 @@ export function Briefing() {
             <div className="rounded-2xl bg-white/10 p-4 backdrop-blur" data-testid="briefing-top-item">
               <div className="flex items-center gap-3">
                 <Avatar name={first.name} size={44} />
-                <button onClick={() => navigate(`/leads/${first.lead_id}`)} className="min-w-0 flex-1 text-left">
+                <button onClick={() => navigate(segment === "driver" ? `/drivers/leads/${first.lead_id}` : `/leads/${first.lead_id}`)} className="min-w-0 flex-1 text-left">
                   <div className="truncate font-display font-bold">{first.name}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-300">
                     <span className="capitalize">{first.status?.replace("_", " ")}</span>
@@ -75,7 +75,7 @@ export function Briefing() {
             {items.length > 1 && (
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {items.slice(1, 5).map((it) => (
-                  <button key={it.lead_id} onClick={() => navigate(`/leads/${it.lead_id}`)}
+                  <button key={it.lead_id} onClick={() => navigate(segment === "driver" ? `/drivers/leads/${it.lead_id}` : `/leads/${it.lead_id}`)}
                     className="flex items-center gap-3 rounded-xl bg-white/5 p-3 text-left transition hover:bg-white/10">
                     <span className="h-2 w-2 rounded-full" style={{ background: it.bucket === "overdue" ? "#ef4444" : it.bucket === "today" ? "#10b981" : "#f59e0b" }} />
                     <div className="min-w-0 flex-1">
