@@ -4,6 +4,7 @@ import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { LeadCard } from "@/components/LeadCard";
+import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { ListSkeleton } from "@/components/Skeletons";
 import { STAGES, STATUS_META, formatINR } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ export default function DriverPipeline() {
   const qc = useQueryClient();
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", "", "driver"], queryFn: async () => (await api.get("/leads", { params: { segment: "driver" } })).data,
@@ -26,12 +28,14 @@ export default function DriverPipeline() {
       await qc.cancelQueries({ queryKey: ["leads", "", "driver"] });
       const prev = qc.getQueryData(["leads", "", "driver"]);
       // Optimistic update: move card immediately, no flicker
-      qc.setQueryData(["leads", ""], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
+      qc.setQueryData(["leads", "", "driver"], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
       return { prev };
     },
-    onError: (e, v, ctx) => { qc.setQueryData(["leads", ""], ctx.prev); toast.error("Could not move lead"); },
-    onSuccess: (_d, { status, name }) => {
-      qc.invalidateQueries();
+    onError: (e, v, ctx) => { qc.setQueryData(["leads", "", "driver"], ctx.prev); toast.error("Could not move lead"); },
+    onSuccess: (_d, { id, status, name }) => {
+      // Only invalidate leads + the specific card's followups — not everything
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-followups", id] });
       if (status === "converted") {
         celebrate();
         toast.success("Lead converted 🎉", { description: name });

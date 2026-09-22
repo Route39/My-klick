@@ -32,13 +32,6 @@ const DRIVER_NAV = [
   { to: "/drivers/customers", label: "Customers", icon: UserCheck },
 ];
 
-const MOBILE_NAV = [
-  { to: "/", label: "Home", icon: LayoutDashboard, end: true },
-  { to: "/leads", label: "Leads", icon: Users },
-  { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
-  { to: "/followups", label: "Follow-ups", icon: CalendarClock },
-];
-
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -49,7 +42,6 @@ export default function AppShell() {
   const [profileOpen, setProfileOpen] = useState(false);
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const navItems = NAV;
-  const driverNavItems = DRIVER_NAV;
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -67,42 +59,26 @@ export default function AppShell() {
   return (
     <CallProvider>
       <div className="min-h-screen bg-background">
-        {/* Sidebar (desktop) */}
+        {/* ── Sidebar (desktop only) ── */}
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200/70 bg-white lg:flex">
-          <div className="flex items-center gap-2.5 px-6 py-6">
+
+          {/* Logo */}
+          <div className="flex shrink-0 items-center gap-2.5 px-6 py-6">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/30">
               <Zap className="h-5 w-5" fill="currentColor" />
             </div>
             <span className="font-display text-xl font-extrabold tracking-tight text-slate-900">Myklick</span>
           </div>
 
-          {/* Section Header */}
-          <div className="px-6 pb-2 pt-2">
-            <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
-              INVESTOR
-            </span>
-          </div>
+          {/* Nav — compact spacing so all 13 links fit without scrolling on standard laptops */}
+          <nav className="min-h-0 flex-1 overflow-y-auto px-3 thin-scroll">
 
-          <nav className="flex-1 space-y-1 px-3">
-            {navItems.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-${n.label.toLowerCase()}`}
-                className={({ isActive }) => cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-                  isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}>
-                <n.icon className="h-[18px] w-[18px]" /> {n.label}
-              </NavLink>
-            ))}
-
-            {/* Drivers Section */}
-            <div className="px-3 pb-2 pt-6">
-              <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
-                DRIVERS
-              </span>
+            {/* INVESTOR */}
+            <div className="px-3 pb-2 pt-2">
+              <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">INVESTOR</span>
             </div>
-            
-            {DRIVER_NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-driver-${n.label.toLowerCase()}`}
+            {navItems.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-${n.label.toLowerCase().replace(" ", "-")}`}
                 className={({ isActive }) => cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
                   isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
@@ -111,12 +87,25 @@ export default function AppShell() {
               </NavLink>
             ))}
 
+            {/* DRIVERS */}
+            <div className="px-3 pb-2 pt-6">
+              <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">DRIVERS</span>
+            </div>
+            {DRIVER_NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} data-testid={`nav-driver-${n.label.toLowerCase().replace(" ", "-")}`}
+                className={({ isActive }) => cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                  isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}>
+                <n.icon className="h-[18px] w-[18px]" /> {n.label}
+              </NavLink>
+            ))}
+
+            {/* STAFF — managers only */}
             {isManager && (
               <>
                 <div className="px-3 pb-2 pt-6">
-                  <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">
-                    STAFF
-                  </span>
+                  <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">STAFF</span>
                 </div>
                 <NavLink to="/team" data-testid="nav-team"
                   className={({ isActive }) => cn(
@@ -125,11 +114,12 @@ export default function AppShell() {
                   )}>
                   <BarChart3 className="h-[18px] w-[18px]" /> Team
                 </NavLink>
-
               </>
             )}
           </nav>
-          <div className="border-t border-slate-100 p-3">
+
+          {/* User footer — always pinned at bottom */}
+          <div className="shrink-0 border-t border-slate-100 p-3">
             <div className="flex items-center gap-3 rounded-xl px-2 py-2">
               <Avatar name={user?.name || "U"} size={36} />
               <div className="min-w-0 flex-1">
@@ -148,7 +138,7 @@ export default function AppShell() {
           </div>
         </aside>
 
-        {/* Main */}
+        {/* Main content */}
         <div className="lg:pl-64">
           {/* Top bar */}
           <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/60 px-4 py-3 glass lg:px-8">
@@ -158,15 +148,13 @@ export default function AppShell() {
               </div>
               <span className="font-display text-lg font-extrabold text-slate-900">Myklick</span>
             </div>
-            {/* Segment badge in header */}
+            {/* Segment badge */}
             <div className="hidden lg:flex items-center">
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
-                  currentSegment === "driver"
-                    ? "bg-orange-100 text-orange-600"
-                    : "bg-indigo-100 text-indigo-600"
-                }`}
-              >
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                currentSegment === "driver"
+                  ? "bg-orange-100 text-orange-600"
+                  : "bg-indigo-100 text-indigo-600"
+              }`}>
                 {currentSegment === "driver" ? "Driver" : "Investor"}
               </span>
             </div>
@@ -187,14 +175,32 @@ export default function AppShell() {
           </main>
         </div>
 
-        {/* Mobile bottom nav */}
+        {/* Mobile bottom nav — segment-aware */}
         <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-200/60 px-2 py-2 glass lg:hidden">
-          {MOBILE_NAV.slice(0, 2).map((n) => <MobileTab key={n.to} {...n} />)}
+          {(currentSegment === "driver"
+            ? [
+                { to: "/drivers", label: "Home", icon: LayoutDashboard, end: true },
+                { to: "/drivers/leads", label: "Drivers", icon: Users },
+              ]
+            : [
+                { to: "/", label: "Home", icon: LayoutDashboard, end: true },
+                { to: "/leads", label: "Leads", icon: Users },
+              ]
+          ).map((n) => <MobileTab key={n.to} {...n} />)}
           <button data-testid="mobile-quick-add" onClick={() => setAddState({ open: true, status: "new" })}
             className="-mt-8 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-xl shadow-primary/40 active:scale-90">
             <Plus className="h-6 w-6" />
           </button>
-          {MOBILE_NAV.slice(2).map((n) => <MobileTab key={n.to} {...n} />)}
+          {(currentSegment === "driver"
+            ? [
+                { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
+                { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
+              ]
+            : [
+                { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
+                { to: "/followups", label: "Follow-ups", icon: CalendarClock },
+              ]
+          ).map((n) => <MobileTab key={n.to} {...n} />)}
         </nav>
 
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} segment={currentSegment} />

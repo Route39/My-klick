@@ -29,8 +29,9 @@ export default function Pipeline({ segment = "" }) {
       return { prev };
     },
     onError: (e, v, ctx) => { qc.setQueryData(["leads", ""], ctx.prev); toast.error("Could not move lead"); },
-    onSuccess: (_d, { status, name }) => {
-      qc.invalidateQueries();
+    onSuccess: (_d, { id, status, name }) => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-followups", id] });
       if (status === "converted") {
         celebrate();
         toast.success("Lead converted 🎉", { description: name });

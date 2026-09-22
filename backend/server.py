@@ -114,8 +114,14 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
     lead = await db.leads.find_one({"id": lead_id})
     if not lead or lead.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Lead not found")
-    if not is_manager(user) and lead.get("assigned_to") != user["id"]:
-        raise HTTPException(status_code=403, detail="You don't have access to this lead")
+    if not is_manager(user):
+        # Staff can access leads they are assigned to OR leads they created
+        can_access = (
+            lead.get("assigned_to") == user["id"] or
+            lead.get("created_by") == user["id"]
+        )
+        if not can_access:
+            raise HTTPException(status_code=403, detail="You don't have access to this lead")
     return lead
 
 async def find_lead_by_phone(number: str, org: str = DEFAULT_ORG):
@@ -284,6 +290,11 @@ async def list_users(user: dict = Depends(get_current_user)):
 async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_user)):
     if not is_manager(user):
         raise HTTPException(status_code=403, detail="Not authorized")
+        
+    existing = await db.users.find_one({"phone": body.phone.strip()})
+    if existing:
+        raise HTTPException(status_code=400, detail="A user with this phone/username already exists.")
+        
     doc = {
         "id": str(uuid.uuid4()), "name": body.name, "email": body.email.lower().strip(), "phone": body.phone.strip(),
         "password_hash": hash_password(body.password or "password123"),
@@ -300,15 +311,7 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
     
     target_user = await db.users.find_one({"id": user_id, "organization_id": org_of(user)})
     if target_user:
-        target_user["deleted_at"] = now_iso()
-        target_user["deleted_by"] = user["id"]
-        
-        # Archive the user
-        await db.archived_users.insert_one(target_user)
-        
-        # Remove from active users
         await db.users.delete_one({"id": user_id, "organization_id": org_of(user)})
-        
     return {"ok": True}
 
 @api.put("/team/{user_id}")
@@ -449,8 +452,8 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         # Auto-assign to the creator if they are not a manager
         assigned = user
 
-    actual_assigned_to = assigned["id"] if assigned else None
-    actual_assigned_name = assigned["name"] if assigned else None
+    actual_assigned_to = assigned.get("id") if assigned else None
+    actual_assigned_name = assigned.get("name") if assigned else None
 
     lead = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user),
@@ -463,6 +466,9 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
         "value": body.value, "notes": body.notes or "", "next_followup": None,
         "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
+        "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
+        "pan_url": body.pan_url or "", "license_url": body.license_url or "",
+        "created_by": user.get("id"), "created_by_name": user.get("name", ""),
         "created_at": now_iso(), "updated_at": now_iso(),
     }
     
@@ -519,9 +525,7 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     new = await db.leads.find_one({"id": lead_id})
     if new.get("status") == "follow_up" and lead.get("status") != "follow_up":
         await maybe_auto_schedule_followup(new, user)
-    elif new.get("status") != "follow_up" and lead.get("status") == "follow_up":
-        # Was in follow_up, now leaving — delete pending followups
-        await db.followups.delete_many({"lead_id": lead_id, "status": "pending"})
+    # NOTE: We do NOT delete pending followups when leaving follow_up — dates persist on all cards
     return clean(new)
 
 @api.patch("/leads/{lead_id}/stage")
@@ -551,7 +555,7 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
                 "source": lead.get("source"), "value": lead.get("value", 0),
                 "segment": lead.get("segment"),
                 "assigned_to": lead.get("assigned_to"), "assigned_name": lead.get("assigned_name"),
-                "converted_by": user["name"], "converted_at": now_iso(),
+                "converted_by": user.get("name"), "converted_at": now_iso(),
             })
     else:
         await log_activity("status_change", lead, user, f"moved lead {old} → {body.status}",
@@ -561,9 +565,8 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
             
     if body.status == "follow_up" and old != "follow_up":
         await maybe_auto_schedule_followup(lead, user)
-    elif body.status != "follow_up":
-        await db.followups.delete_many({"lead_id": lead_id, "status": "pending"})
-        
+    # NOTE: We do NOT delete pending followups when leaving follow_up — dates persist on all cards
+
     new = await db.leads.find_one({"id": lead_id})
     return clean(new)
 
@@ -645,7 +648,7 @@ async def initiate_call(lead_id: str, user: dict = Depends(get_current_user)):
         "direction": "outgoing", "status": result.get("status", "initiated"),
         "from_number": agent_phone, "to_number": lead["phone"],
         "duration_seconds": 0, "recording_url": None,
-        "user_id": user["id"], "user_name": user["name"],
+        "user_id": user.get("id"), "user_name": user.get("name"),
         "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
     }
     await db.calls.insert_one(dict(call))
@@ -675,7 +678,7 @@ async def initiate_ivr(lead_id: str, user: dict = Depends(get_current_user)):
         "direction": "outgoing-ivr", "status": result.get("status", "initiated"),
         "from_number": os.environ.get("EXOTEL_VIRTUAL_NUMBER", ""), "to_number": lead["phone"],
         "duration_seconds": 0, "recording_url": None,
-        "user_id": user["id"], "user_name": user["name"],
+        "user_id": user.get("id"), "user_name": user.get("name"),
         "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
     }
     await db.calls.insert_one(dict(call))
@@ -770,7 +773,7 @@ async def log_call(lead_id: str, body: LegacyCallIn, user: dict = Depends(get_cu
         "provider": "manual", "provider_call_id": f"manual-{uuid.uuid4().hex[:10]}",
         "direction": body.direction, "status": body.status,
         "from_number": "", "to_number": lead["phone"], "duration_seconds": body.duration_seconds,
-        "recording_url": None, "user_id": user["id"], "user_name": user["name"],
+        "recording_url": None, "user_id": user.get("id"), "user_name": user.get("name"),
         "activity_logged": True, "start_time": now_iso(), "end_time": now_iso(), "created_at": now_iso(),
     }
     await db.calls.insert_one(dict(call))
@@ -997,7 +1000,7 @@ async def initiate_manual_call(body: ManualCallIn, user: dict = Depends(get_curr
         "direction": "outgoing", "status": result.get("status", "initiated"),
         "from_number": body.from_number, "to_number": body.to_number,
         "duration_seconds": 0, "recording_url": None,
-        "user_id": user["id"], "user_name": user["name"],
+        "user_id": user.get("id"), "user_name": user.get("name"),
         "start_time": now_iso(), "end_time": None, "created_at": now_iso(),
     }
     await db.calls.insert_one(dict(call))
@@ -1045,8 +1048,8 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
     fu = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user),
         "lead_id": lead_id, "lead_name": lead["name"], "reason": body.reason, "due_at": body.due_at,
-        "assigned_to": body.assigned_to or user["id"],
-        "assigned_name": assigned["name"] if assigned else user["name"],
+        "assigned_to": assigned.get("id") if assigned else lead.get("assigned_to"),
+        "assigned_name": assigned.get("name") if assigned else lead.get("assigned_name"),
         "status": "pending", "created_at": now_iso(), "completed_at": None,
     }
     await db.followups.insert_one(dict(fu))
@@ -1125,16 +1128,25 @@ async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Follow-up not found")
     await db.followups.delete_one({"id": fu_id})
     # Check if lead has any other pending follow-ups
-    other_pending = await db.followups.find_one({"lead_id": fu["lead_id"], "status": "pending"})
+    other_pending = await db.followups.find_one(
+        {"lead_id": fu["lead_id"], "status": "pending"},
+        sort=[("due_at", 1)]
+    )
+    lead = await db.leads.find_one({"id": fu["lead_id"]})
     if not other_pending:
         # No more pending follow-ups — restore lead to where it was BEFORE entering follow_up
-        lead = await db.leads.find_one({"id": fu["lead_id"]})
         if lead and lead.get("status") == "follow_up":
             restore_status = lead.get("pre_followup_status") or "new"
             await db.leads.update_one(
                 {"id": fu["lead_id"]},
                 {"$set": {"status": restore_status, "pre_followup_status": None, "next_followup": None, "updated_at": now_iso()}}
             )
+    else:
+        # Still has pending follow-ups — update next_followup to the earliest remaining
+        await db.leads.update_one(
+            {"id": fu["lead_id"]},
+            {"$set": {"next_followup": other_pending["due_at"], "updated_at": now_iso()}}
+        )
     return {"ok": True}
 
 # ---------------------------------------------------------------------------
@@ -1214,7 +1226,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
                 break
 
     return {
-        "user_name": user["name"],
+        "user_name": user.get("name"),
         "counts": {"overdue": len(overdue), "high_priority": len(high_leads), "today": len(today_only)},
         "items": picks,
     }

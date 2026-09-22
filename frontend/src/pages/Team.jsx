@@ -68,11 +68,11 @@ function AddTeamMemberModal({ onSuccess }) {
           <div className="space-y-4">
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Full Name</Label>
-              <Input value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" className="rounded-xl border-slate-200" />
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" className="rounded-xl border-slate-200" required />
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
-              <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" />
+              <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" required />
               <p className="text-xs text-slate-500 mt-1">They will use this to log in.</p>
             </div>
             <div>
@@ -96,12 +96,11 @@ function AddTeamMemberModal({ onSuccess }) {
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Password</Label>
                 <div className="relative">
-                  <Input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Leave blank for default" className="rounded-xl border-slate-200 pr-10" />
+                  <Input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className="rounded-xl border-slate-200 pr-10" required />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1 leading-tight">Defaults to <span className="font-mono text-slate-700">password123</span></p>
               </div>
             </div>
           </div>

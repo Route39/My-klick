@@ -1,10 +1,12 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Phone, MessageCircle, Clock, Trash, Pencil } from "lucide-react";
+import { Phone, MessageCircle, Clock, Trash, Pencil, Plus } from "lucide-react";
 import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatINR, formatClock, formatDay } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
 import { toast } from "sonner";
@@ -15,6 +17,21 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
   const navigate = useNavigate();
   const { startCall } = useCall();
   const qc = useQueryClient();
+  const isFollowUp = lead.status === "follow_up";
+
+  // Always fetch all follow-ups for this lead so they persist on refresh and across all statuses
+  const { data: followUps = [] } = useQuery({
+    queryKey: ["lead-followups", lead.id],
+    queryFn: async () => (await api.get(`/leads/${lead.id}/followups`)).data,
+    staleTime: 60000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  // Pending only, sorted oldest → newest
+  const pendingFollowUps = followUps
+    .filter((f) => f.status === "pending")
+    .sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
 
   const deleteLead = useMutation({
     mutationFn: async (id) => await api.delete(`/leads/${id}`),
@@ -25,6 +42,35 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     onError: (e) => toast.error(e.response?.data?.detail || "Could not delete lead."),
   });
 
+  const scheduleFollowUp = useMutation({
+    mutationFn: async (date) => {
+      // Use selected date but with current time of day (not fixed 10:00)
+      const now = new Date();
+      const d = new Date(date);
+      d.setHours(now.getHours(), now.getMinutes(), 0, 0);
+      return (await api.post(`/leads/${lead.id}/followups`, {
+        reason: "Quick Follow-up",
+        due_at: d.toISOString(),
+      })).data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead-followups", lead.id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Follow-up scheduled ✓");
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not schedule follow-up."),
+  });
+
+  const deleteFollowUp = useMutation({
+    mutationFn: async (fuId) => (await api.delete(`/followups/${fuId}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead-followups", lead.id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Follow-up removed");
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || "Could not delete follow-up."),
+  });
+
   const whatsapp = async (e) => {
     e.stopPropagation();
     await api.post(`/leads/${lead.id}/whatsapp`, { text: "Hi, following up on your enquiry." });
@@ -32,6 +78,35 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     navigate(lead.segment === "driver" ? `/drivers/leads/${lead.id}?tab=whatsapp` : `/leads/${lead.id}?tab=whatsapp`);
   };
   const call = (e) => { e.stopPropagation(); startCall(lead); };
+
+  // Reusable calendar popover for adding the next follow-up
+  function AddFollowUpPopover({ triggerClassName }) {
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-600 active:scale-95 transition",
+              triggerClassName
+            )}
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0 z-[100]" onClick={(e) => e.stopPropagation()}>
+          <CalendarComponent
+            mode="single"
+            disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+            onSelect={(date) => {
+              if (date) scheduleFollowUp.mutate(date);
+            }}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <motion.div
@@ -48,10 +123,13 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
         lead.status === "lost" && "opacity-70", draggable && "active:cursor-grabbing"
       )}
     >
+      {/* Status + Priority */}
       <div className="flex items-center justify-between">
         <StatusBadge status={lead.status} />
         <PriorityBadge priority={lead.priority} />
       </div>
+
+      {/* Avatar + Name */}
       <div className="mt-3 flex items-center gap-3">
         <Avatar name={lead.name} size={42} />
         <div className="min-w-0 flex-1">
@@ -59,6 +137,8 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           <div className="truncate text-xs text-slate-400">{lead.phone}</div>
         </div>
       </div>
+
+      {/* Source + Value + Extra info */}
       <div className="mt-3 flex flex-col gap-2 text-xs">
         <div className="flex items-center justify-between">
           <SourceBadge source={lead.source} />
@@ -80,15 +160,62 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           )
         )}
       </div>
+
+      {/* Assignee row */}
       <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
         <Avatar name={lead.assigned_name || "?"} size={18} ring={false} />
         <span className="truncate">{lead.assigned_name || "Unassigned"}</span>
-        {lead.next_followup && (
-          <span className="ml-auto inline-flex items-center gap-1 font-medium text-amber-600">
-            <Clock className="h-3 w-3" /> {formatDay(lead.next_followup)} {formatClock(lead.next_followup)}
-          </span>
-        )}
       </div>
+
+      {/* ── Follow-up date timeline rows — shown on ALL statuses ── */}
+      {pendingFollowUps.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Follow-up Dates</span>
+          {pendingFollowUps.map((fu, idx) => {
+            const isLast = idx === pendingFollowUps.length - 1;
+            const isFirst = idx === 0;
+            return (
+              <div key={fu.id} className="flex items-center gap-1.5 text-xs group/fu">
+                {/* Dot */}
+                <span className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  isFirst ? "bg-amber-500" : "bg-slate-300"
+                )} />
+                <span className={cn(
+                  "inline-flex items-center gap-1 font-medium",
+                  isFirst ? "text-amber-600" : "text-slate-400"
+                )}>
+                  <Clock className="h-3 w-3" />
+                  {formatDay(fu.due_at)} {formatClock(fu.due_at)}
+                </span>
+                {/* Controls only when in follow_up status */}
+                {isFollowUp && (
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteFollowUp.mutate(fu.id); }}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-red-400 transition hover:bg-red-50 hover:text-red-600 active:scale-95"
+                      title="Remove this follow-up"
+                    >
+                      ×
+                    </button>
+                    {isLast && <AddFollowUpPopover />}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* If status is follow_up but no dates yet — prompt to schedule */}
+      {isFollowUp && pendingFollowUps.length === 0 && (
+        <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <AddFollowUpPopover />
+          <span className="text-xs font-medium text-amber-600">Schedule follow-up</span>
+        </div>
+      )}
+
+      {/* Action buttons */}
       <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
         <button data-testid={`quick-call-${lead.id}`} onClick={call}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-50 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-100 active:scale-95">
