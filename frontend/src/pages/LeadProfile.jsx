@@ -55,7 +55,7 @@ export default function LeadProfile() {
       qc.removeQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries();
       toast.success("Lead permanently deleted");
-      navigate("/leads");
+      navigate(lead?.segment === "driver" ? "/drivers/leads" : "/leads");
     },
     onError: (e) => toast.error(e.response?.data?.detail || "Could not delete lead."),
   });
@@ -79,7 +79,7 @@ export default function LeadProfile() {
         <p className="mt-1.5 text-slate-500">
           {s === 403 ? "This lead is assigned to another team member." : "It may have been removed."}
         </p>
-        <button onClick={() => navigate("/leads")} className="mt-5 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700">
+        <button onClick={() => navigate(lead?.segment === "driver" ? "/drivers/leads" : "/leads")} className="mt-5 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700">
           Back to Leads
         </button>
       </div>
@@ -136,7 +136,7 @@ export default function LeadProfile() {
             <PartyPopper className="h-6 w-6" />
             <div><div className="font-display font-bold">Lead Converted 🎉</div>
               <div className="text-sm text-white/80">Conversion value {fullINR(lead.value)}</div></div>
-            <button onClick={() => navigate("/customers")} className="ml-auto rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold backdrop-blur transition hover:bg-white/30">View Customer</button>
+            <button onClick={() => navigate(lead.segment === "driver" ? "/drivers/customers" : "/customers")} className="ml-auto rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold backdrop-blur transition hover:bg-white/30">View Customer</button>
           </motion.div>
         )}
 

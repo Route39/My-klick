@@ -56,12 +56,12 @@ export default function DriverFollowUps() {
         <div className="space-y-6">
           {overdue.length > 0 && (
             <Section title="Overdue" count={overdue.length} danger>
-              {overdue.map((f, i) => <Row key={f.id} f={f} i={i} onComplete={() => complete.mutate(f.id)} onReschedule={() => reschedule.mutate(f.id)} onDelete={() => { if(window.confirm("Delete this follow-up?")) deleteFollowup.mutate(f.id); }} onOpen={() => navigate(`/leads/${f.lead_id}`)} onEdit={() => navigate(`/leads/${f.lead_id}?edit=true`)} />)}
+              {overdue.map((f, i) => <Row key={f.id} f={f} i={i} onComplete={() => complete.mutate(f.id)} onReschedule={() => reschedule.mutate(f.id)} onDelete={() => { if(window.confirm("Delete this follow-up?")) deleteFollowup.mutate(f.id); }} onOpen={() => navigate(`/drivers/leads/${f.lead_id}`)} onEdit={() => navigate(`/drivers/leads/${f.lead_id}?edit=true`)} />)}
             </Section>
           )}
           {upcoming.length > 0 && (
             <Section title="Upcoming" count={upcoming.length}>
-              {upcoming.map((f, i) => <Row key={f.id} f={f} i={i} onComplete={() => complete.mutate(f.id)} onReschedule={() => reschedule.mutate(f.id)} onDelete={() => { if(window.confirm("Delete this follow-up?")) deleteFollowup.mutate(f.id); }} onOpen={() => navigate(`/leads/${f.lead_id}`)} onEdit={() => navigate(`/leads/${f.lead_id}?edit=true`)} />)}
+              {upcoming.map((f, i) => <Row key={f.id} f={f} i={i} onComplete={() => complete.mutate(f.id)} onReschedule={() => reschedule.mutate(f.id)} onDelete={() => { if(window.confirm("Delete this follow-up?")) deleteFollowup.mutate(f.id); }} onOpen={() => navigate(`/drivers/leads/${f.lead_id}`)} onEdit={() => navigate(`/drivers/leads/${f.lead_id}?edit=true`)} />)}
             </Section>
           )}
         </div>

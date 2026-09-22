@@ -40,16 +40,16 @@ export function FollowUpDialog({ open, onOpenChange, leadId }) {
           </div>
           <DialogTitle className="font-display text-2xl">Schedule Follow-up</DialogTitle>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (reason && when) create.mutate(); }}>
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
           <div className="space-y-1.5">
             <Label>Reason</Label>
             <Input data-testid="followup-reason-input" value={reason} onChange={(e) => setReason(e.target.value)}
-              placeholder="Investment discussion" required className="rounded-xl" />
+              placeholder="Investment discussion" className="rounded-xl" />
           </div>
           <div className="space-y-1.5">
             <Label>When</Label>
             <Input data-testid="followup-when-input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)}
-              required className="rounded-xl" />
+              className="rounded-xl" />
           </div>
           <Button data-testid="followup-submit" type="submit" disabled={create.isPending}
             className="w-full rounded-xl py-6 text-base font-semibold">

@@ -47,7 +47,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl sm:max-w-md" data-testid="add-lead-dialog">
+      <DialogContent aria-describedby={undefined} className="rounded-3xl sm:max-w-md" data-testid="add-lead-dialog">
         <DialogHeader>
           <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-primary">
             <Rocket className="h-5 w-5" />
@@ -57,18 +57,18 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
         </DialogHeader>
         <form
           className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); if (form.name && form.phone) create.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); create.mutate(); }}
         >
           <div className="space-y-1.5">
             <Label>Name</Label>
             <Input data-testid="lead-name-input" value={form.name} onChange={(e) => set("name")(e.target.value)}
-              placeholder="Kumar Traders" required className="rounded-xl" />
+              placeholder="Kumar Traders" className="rounded-xl" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Phone</Label>
               <Input data-testid="lead-phone-input" value={form.phone} onChange={(e) => set("phone")(e.target.value)}
-                placeholder="+91 98765 43210" required className="rounded-xl" />
+                placeholder="+91 98765 43210" className="rounded-xl" />
             </div>
             <div className="space-y-1.5">
               <Label>WhatsApp</Label>

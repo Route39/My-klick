@@ -165,19 +165,19 @@ export default function Leads({ segment = "investor" }) {
           testid="leads-empty"
           action={<button onClick={openAdd} className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700">+ Add Lead</button>} />
       ) : view === "list" ? (
-        <LeadList leads={leads} />
+        <LeadList leads={leads} segment={segment} />
       ) : view === "cards" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {leads.map((l, i) => <LeadCard key={l.id} lead={l} index={i} />)}
         </div>
       ) : (
-        <MiniPipeline leads={leads} />
+        <MiniPipeline leads={leads} segment={segment} />
       )}
     </div>
   );
 }
 
-function LeadList({ leads }) {
+function LeadList({ leads, segment }) {
   const navigate = useNavigate();
   const { startCall } = useCall();
   const qc = useQueryClient();
@@ -195,7 +195,7 @@ function LeadList({ leads }) {
     <div className="space-y-2.5">
       {leads.map((l, i) => (
         <motion.div key={l.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}
-          data-testid={`lead-row-${l.id}`} onClick={() => navigate(`/leads/${l.id}`)}
+          data-testid={`lead-row-${l.id}`} onClick={() => navigate(segment === "driver" ? `/drivers/leads/${l.id}` : `/leads/${l.id}`)}
           className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
           <Avatar name={l.name} size={46} />
           <div className="min-w-0 flex-1">
@@ -222,7 +222,7 @@ function LeadList({ leads }) {
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
             <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 active:scale-90"><MessageCircle className="h-4 w-4" /></button>
-            <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/leads/${l.id}?edit=true`); }}
+            <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(segment === "driver" ? `/drivers/leads/${l.id}?edit=true` : `/leads/${l.id}?edit=true`); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 active:scale-90"><Pencil className="h-4 w-4" /></button>
             <button data-testid={`row-delete-${l.id}`} onClick={(e) => { e.stopPropagation(); if(window.confirm("Are you sure you want to permanently delete this lead?")) deleteLead.mutate(l.id); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100 active:scale-90"><Trash className="h-4 w-4" /></button>
@@ -233,7 +233,7 @@ function LeadList({ leads }) {
   );
 }
 
-function MiniPipeline({ leads }) {
+function MiniPipeline({ leads, segment }) {
   const navigate = useNavigate();
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 thin-scroll">

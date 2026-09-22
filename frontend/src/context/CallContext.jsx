@@ -96,6 +96,7 @@ export function CallProvider({ children }) {
         clearInterval(poller.current);
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead, callId]);
 
   const endCall = async () => {

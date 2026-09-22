@@ -68,11 +68,11 @@ function AddTeamMemberModal({ onSuccess }) {
           <div className="space-y-4">
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Full Name</Label>
-              <Input required value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" className="rounded-xl border-slate-200" />
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" className="rounded-xl border-slate-200" />
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
-              <Input required value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" />
+              <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" />
               <p className="text-xs text-slate-500 mt-1">They will use this to log in.</p>
             </div>
             <div>
@@ -160,11 +160,11 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
           <form onSubmit={handleSave} className="p-6 space-y-4">
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Full Name</Label>
-              <Input required value={name} onChange={e => setName(e.target.value)} className="rounded-xl border-slate-200" />
+              <Input value={name} onChange={e => setName(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
-              <Input required value={phone} onChange={e => setPhone(e.target.value)} className="rounded-xl border-slate-200" />
+              <Input value={phone} onChange={e => setPhone(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>

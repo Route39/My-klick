@@ -38,7 +38,7 @@ export default function DriverCustomers() {
           {data.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.3) }}
               data-testid={`customer-card-${c.id}`}
-              onClick={() => navigate(`/customers/${c.id}`)}
+              onClick={() => navigate(`/drivers/customers/${c.id}`)}
               className="cursor-pointer rounded-2xl border border-slate-200/60 bg-white p-5 card-lift">
               <div className="flex items-center gap-3">
                 <Avatar name={c.name} size={48} />

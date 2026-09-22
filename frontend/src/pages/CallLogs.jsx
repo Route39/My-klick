@@ -41,6 +41,7 @@ export default function CallLogs({ segment = 'investor' }) {
     if (user?.phone && !fromNumber) {
       setFromNumber(user.phone);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
   const [toNumber, setToNumber] = useState("");
 
@@ -121,11 +122,11 @@ export default function CallLogs({ segment = 'investor' }) {
             <form onSubmit={triggerManualCall} className="space-y-4">
               <div>
                 <Label className="text-slate-600 mb-1.5 block">Your Number (Agent)</Label>
-                <Input required type="tel" placeholder="+91 9876543210" value={fromNumber} onChange={e => setFromNumber(e.target.value)} className="rounded-xl" />
+                <Input type="tel" placeholder="+91 9876543210" value={fromNumber} onChange={e => setFromNumber(e.target.value)} className="rounded-xl" />
               </div>
               <div>
                 <Label className="text-slate-600 mb-1.5 block">Customer Number</Label>
-                <Input required type="tel" placeholder="+91 9999999999" value={toNumber} onChange={e => setToNumber(e.target.value)} className="rounded-xl" />
+                <Input type="tel" placeholder="+91 9999999999" value={toNumber} onChange={e => setToNumber(e.target.value)} className="rounded-xl" />
               </div>
               <Button type="submit" disabled={connecting} className="w-full rounded-xl py-6 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
                 {connecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Trigger Call"}

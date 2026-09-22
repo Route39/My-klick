@@ -55,7 +55,6 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.phone) return toast.error("Name and Phone are required");
     
     setIsUploading(true);
     try {
@@ -80,7 +79,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl sm:max-w-md">
+      <DialogContent aria-describedby={undefined} className="rounded-3xl sm:max-w-md">
         <DialogHeader>
           <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-primary">
             <Rocket className="h-5 w-5" />
@@ -90,14 +89,14 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="space-y-1.5">
-            <Label>Driver Name *</Label>
-            <Input required className="rounded-xl" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Ramesh Kumar" />
+            <Label>Driver Name</Label>
+            <Input className="rounded-xl" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Ramesh Kumar" />
           </div>
           
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Phone Number *</Label>
-              <Input type="tel" required className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. 9876543210" />
+              <Label>Phone Number</Label>
+              <Input type="tel" className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. 9876543210" />
             </div>
             <div className="space-y-1.5">
               <Label>Location</Label>

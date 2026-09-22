@@ -104,10 +104,10 @@ async def get_current_user(request: Request) -> dict:
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         return clean(user)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=401, detail=f"Auth error: {str(e)}")
 
 async def lead_or_403(lead_id: str, user: dict) -> dict:
     """Fetch a lead enforcing org isolation + sales-can-only-see-assigned."""
@@ -248,10 +248,17 @@ async def register(body: RegisterIn):
 async def login(body: LoginIn):
     username = body.username.lower().strip()
     user = await db.users.find_one({"$or": [{"email": username}, {"phone": username}]})
-    if not user or not verify_password(body.password, user["password_hash"]):
+    if not user or not verify_password(body.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid username, email or password")
-    u_id = user.get("id") or str(user.get("_id", ""))
-    token = create_access_token(u_id, user.get("email", ""))
+    
+    user_id = user.get("id")
+    if not user_id:
+        user_id = str(user["_id"])
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"id": user_id}})
+        user["id"] = user_id
+
+    token = create_access_token(user_id, user.get("email", ""))
+    return {"token": token, "user": clean(user)}
     cleaned = clean(user)
     if "id" not in cleaned:
         cleaned["id"] = u_id

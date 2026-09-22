@@ -35,10 +35,9 @@ export default function Customers({ segment = "investor" }) {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((c, i) => (
-            <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.3) }}
-              data-testid={`customer-card-${c.id}`}
-              onClick={() => navigate(`/customers/${c.id}`)}
-              className="cursor-pointer rounded-2xl border border-slate-200/60 bg-white p-5 card-lift">
+            <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.2) }}
+              onClick={() => navigate(segment === "driver" ? `/drivers/customers/${c.id}` : `/customers/${c.id}`)}
+              className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/70 bg-white p-4 transition hover:border-emerald-500/30 hover:shadow-md">
               <div className="flex items-center gap-3">
                 <Avatar name={c.name} size={48} />
                 <div className="min-w-0 flex-1">

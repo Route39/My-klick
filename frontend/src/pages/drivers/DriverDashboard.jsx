@@ -194,7 +194,7 @@ function Funnel({ funnel }) {
         {stages.map((s, i) => {
           const m = STATUS_META[s]; const count = funnel[s] || 0;
           return (
-            <button key={s} data-testid={`funnel-stage-${s}`} onClick={() => navigate(`/leads?status=${s}`)}
+            <button key={s} data-testid={`funnel-stage-${s}`} onClick={() => navigate(`/drivers/leads?status=${s}`)}
               className="group flex w-full items-center gap-4 text-left">
               <span className="w-24 shrink-0 text-sm font-semibold text-slate-600">{m.label}</span>
               <div className="relative h-9 flex-1 overflow-hidden rounded-xl bg-slate-50">
@@ -291,7 +291,7 @@ function TodayFollowUps({ followups }) {
       ) : (
         <div className="mt-5 space-y-3">
           {followups.slice(0, 6).map((f) => (
-            <button key={f.id} onClick={() => navigate(`/leads/${f.lead_id}`)}
+            <button key={f.id} onClick={() => navigate(`/drivers/leads/${f.lead_id}`)}
               data-testid={`today-followup-${f.id}`}
               className={cn("flex w-full items-center gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm",
                 f.overdue ? "border-red-200 bg-red-50" : "border-slate-200 bg-white")}>

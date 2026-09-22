@@ -25,7 +25,7 @@ const NAV = [
 
 const DRIVER_NAV = [
   { to: "/drivers", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/drivers/leads", label: "Leads", icon: Users },
+  { to: "/drivers/leads", label: "Drivers", icon: Users },
   { to: "/drivers/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },

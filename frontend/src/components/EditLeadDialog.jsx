@@ -39,17 +39,17 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-lg thin-scroll" data-testid="edit-lead-dialog">
+      <DialogContent aria-describedby={undefined} className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-lg thin-scroll" data-testid="edit-lead-dialog">
         <DialogHeader>
           <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-primary">
             <Pencil className="h-5 w-5" />
           </div>
           <DialogTitle className="font-display text-2xl">Edit Lead</DialogTitle>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (form.name && form.phone) save.mutate(); }}>
-          <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} required className="rounded-xl" /></Field>
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+          <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} required className="rounded-xl" /></Field>
+            <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value)} className="rounded-xl" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -113,5 +113,7 @@ function shape(l = {}) {
     status: l.status || "new", priority: l.priority || "medium",
     assigned_to: l.assigned_to || "", value: l.value || 0, notes: l.notes || "", company: l.company || "",
     no_of_vehicles: l.no_of_vehicles || "", remarks: l.remarks || "",
+    segment: l.segment || "investor", rc: l.rc || "",
+    aadhaar_url: l.aadhaar_url || "", pan_url: l.pan_url || "", license_url: l.license_url || "",
   };
 }

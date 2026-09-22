@@ -19,7 +19,7 @@ export function GlobalSearch({ open, onOpenChange, segment }) {
       try { setRes((await api.get(`/search?q=${encodeURIComponent(q)}&segment=${segment || ""}`)).data); } catch (e) {}
     }, 180);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, segment]);
 
   const go = (path) => { onOpenChange(false); setQ(""); navigate(path); };
 

@@ -110,7 +110,7 @@ function LeadList({ leads }) {
     <div className="space-y-2.5">
       {leads.map((l, i) => (
         <motion.div key={l.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}
-          data-testid={`lead-row-${l.id}`} onClick={() => navigate(`/leads/${l.id}`)}
+          data-testid={`lead-row-${l.id}`} onClick={() => navigate(`/drivers/leads/${l.id}`)}
           className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
           <Avatar name={l.name} size={46} />
           <div className="min-w-0 flex-1">
@@ -137,7 +137,7 @@ function LeadList({ leads }) {
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
             <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 active:scale-90"><MessageCircle className="h-4 w-4" /></button>
-            <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/leads/${l.id}?edit=true`); }}
+            <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/drivers/leads/${l.id}?edit=true`); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 active:scale-90"><Pencil className="h-4 w-4" /></button>
             <button data-testid={`row-delete-${l.id}`} onClick={(e) => { e.stopPropagation(); if(window.confirm("Are you sure you want to permanently delete this lead?")) deleteLead.mutate(l.id); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100 active:scale-90"><Trash className="h-4 w-4" /></button>
