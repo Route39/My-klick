@@ -43,7 +43,7 @@ function greeting() {
   return "Good evening";
 }
 
-export default function Dashboard({ segment = "investor" }) {
+export default function Dashboard({ segment = "" }) {
   const { user } = useAuth();
   const { data: stats, isLoading } = useQuery({ queryKey: ["stats", segment], queryFn: async () => (await api.get("/dashboard/stats", { params: { segment } })).data });
   const { data: activities = [] } = useQuery({ queryKey: ["activities", segment], queryFn: async () => (await api.get("/activities", { params: { limit: 8, segment } })).data });

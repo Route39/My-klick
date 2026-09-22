@@ -13,7 +13,7 @@ import { formatClock, formatDay, formatINR } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
 import { cn } from "@/lib/utils";
 
-export default function FollowUps({ segment = "investor" }) {
+export default function FollowUps({ segment = "" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { openAdd } = useOutletContext();

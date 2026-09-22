@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { useEffect } from "react";
 
-export default function CallLogs({ segment = 'investor' }) {
+export default function CallLogs({ segment = '' }) {
   const { user } = useAuth();
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const [params, setParams] = useSearchParams();

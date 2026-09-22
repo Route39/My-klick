@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ListSkeleton } from "@/components/Skeletons";
 import { fullINR, formatINR, formatDay } from "@/lib/constants";
 
-export default function Customers({ segment = "investor" }) {
+export default function Customers({ segment = "" }) {
   const navigate = useNavigate();
   const { data = [], isLoading } = useQuery({ queryKey: ["customers", segment], queryFn: async () => (await api.get("/customers", { params: { segment } })).data });
   const totalValue = data.reduce((a, c) => a + (c.value || 0), 0);

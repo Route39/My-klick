@@ -8,7 +8,7 @@ import { ListSkeleton } from "@/components/Skeletons";
 import { STAGES, STATUS_META, formatINR } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-export default function Pipeline({ segment = "investor" }) {
+export default function Pipeline({ segment = "" }) {
   const qc = useQueryClient();
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);

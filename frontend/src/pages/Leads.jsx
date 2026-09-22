@@ -27,7 +27,7 @@ const VIEWS = [
   { id: "pipeline", icon: KanbanSquare, label: "Pipeline" },
 ];
 
-export default function Leads({ segment = "investor" }) {
+export default function Leads({ segment = "" }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const { openAdd } = useOutletContext();
