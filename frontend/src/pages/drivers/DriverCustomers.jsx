@@ -10,8 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ListSkeleton } from "@/components/Skeletons";
 import { fullINR, formatINR, formatDay } from "@/lib/constants";
 
-export default function DriverCustomers() {
-  const segment = "driver";
+export default function DriverCustomers({ segment = "driver" }) {
   const navigate = useNavigate();
   const { data = [], isLoading } = useQuery({ queryKey: ["customers", segment], queryFn: async () => (await api.get("/customers", { params: { segment } })).data });
   const totalValue = data.reduce((a, c) => a + (c.value || 0), 0);

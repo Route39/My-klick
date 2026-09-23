@@ -23,8 +23,7 @@ const VIEWS = [
   { id: "pipeline", icon: KanbanSquare, label: "Pipeline" },
 ];
 
-export default function DriverLeads() {
-  const segment = "driver";
+export default function DriverLeads({ segment = "driver" }) {
   const [params, setParams] = useSearchParams();
   const { openAdd } = useOutletContext();
   const [view, setView] = useState("list");

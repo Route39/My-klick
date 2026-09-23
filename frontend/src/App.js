@@ -61,13 +61,13 @@ export default function App() {
             <Route path="/calls" element={<CallLogs segment="investor" />} />
 
             {/* Driver Routes */}
-            <Route path="/drivers" element={<DriverDashboard />} />
+            <Route path="/drivers" element={<DriverDashboard segment="driver" />} />
             <Route path="/drivers/calls" element={<CallLogs segment="driver" />} />
-            <Route path="/drivers/leads" element={<DriverLeads />} />
+            <Route path="/drivers/leads" element={<DriverLeads segment="driver" />} />
             <Route path="/drivers/leads/:id" element={<LeadProfile segment="driver" />} />
-            <Route path="/drivers/pipeline" element={<DriverPipeline />} />
-            <Route path="/drivers/followups" element={<DriverFollowUps />} />
-            <Route path="/drivers/customers" element={<DriverCustomers />} />
+            <Route path="/drivers/pipeline" element={<DriverPipeline segment="driver" />} />
+            <Route path="/drivers/followups" element={<DriverFollowUps segment="driver" />} />
+            <Route path="/drivers/customers" element={<DriverCustomers segment="driver" />} />
             <Route path="/drivers/customers/:id" element={<CustomerDetail segment="driver" />} />
           </Route>
 

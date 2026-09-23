@@ -13,8 +13,7 @@ import { formatClock, formatDay, formatINR } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
 import { cn } from "@/lib/utils";
 
-export default function DriverFollowUps() {
-  const segment = "driver";
+export default function DriverFollowUps({ segment = "driver" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { openAdd } = useOutletContext();

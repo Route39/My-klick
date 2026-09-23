@@ -9,8 +9,7 @@ import { ListSkeleton } from "@/components/Skeletons";
 import { STAGES, STATUS_META, formatINR } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-export default function DriverPipeline() {
-  const segment = "driver";
+export default function DriverPipeline({ segment = "driver" }) {
   const qc = useQueryClient();
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
