@@ -1555,7 +1555,7 @@ async def migrate():
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("phone", unique=True)
+    await db.users.create_index("phone")  # non-unique: existing users have missing/duplicate phones
     await db.users.create_index("email", sparse=True)
     await db.leads.create_index("id", unique=True)
     await db.webhook_events.create_index("event_key", unique=True)
