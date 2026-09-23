@@ -171,7 +171,7 @@ export default function AppShell() {
           </header>
 
           <main className="px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">
-            <Outlet context={{ openAdd: (status = "new") => setAddState({ open: true, status }) }} />
+            <Outlet context={{ openAdd: (status) => setAddState({ open: true, status: typeof status === "string" ? status : "new" }) }} />
           </main>
         </div>
 
