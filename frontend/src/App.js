@@ -50,12 +50,12 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route element={<Protected><AppShell /></Protected>}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/leads" element={<Leads />} />
+            <Route path="/" element={<Dashboard segment="investor" />} />
+            <Route path="/leads" element={<Leads segment="investor" />} />
             <Route path="/leads/:id" element={<LeadProfile />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/followups" element={<FollowUps />} />
-            <Route path="/customers" element={<Customers />} />
+            <Route path="/pipeline" element={<Pipeline segment="investor" />} />
+            <Route path="/followups" element={<FollowUps segment="investor" />} />
+            <Route path="/customers" element={<Customers segment="investor" />} />
             <Route path="/customers/:id" element={<CustomerDetail />} />
             <Route path="/team" element={<Team />} />
             <Route path="/calls" element={<CallLogs />} />
