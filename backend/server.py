@@ -445,8 +445,9 @@ async def get_lead_metadata(lead_id: str, user: dict = Depends(get_current_user)
 
 @api.post("/leads")
 async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
-    assigned = None
-    if body.assigned_to:
+    try:
+        assigned = None
+        if body.assigned_to:
         assigned = await db.users.find_one({"id": body.assigned_to})
     elif not is_manager(user):
         # Auto-assign to the creator if they are not a manager
@@ -491,6 +492,10 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     asyncio.create_task(enrich_lead_metadata(lead["id"], lead["phone"]))
     
     return clean(lead)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
 
 @api.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_current_user)):
