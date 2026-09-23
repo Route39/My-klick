@@ -1559,17 +1559,44 @@ async def migrate():
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("phone")  # non-unique: existing users have missing/duplicate phones
-    await db.users.create_index("email", sparse=True)
-    await db.leads.create_index("id", unique=True)
-    await db.webhook_events.create_index("event_key", unique=True)
-    await db.calls.create_index("provider_call_id")
-    await db.messages.create_index("provider_message_id")
+    try:
+        await db.users.drop_index("email_1")
+    except Exception:
+        pass
+    try:
+        await db.users.drop_index("phone_1")
+    except Exception:
+        pass
+
+    try:
+        await db.users.create_index("phone", unique=True)
+    except Exception:
+        pass
+    try:
+        await db.users.create_index("email", unique=True, sparse=True)
+    except Exception:
+        pass
+    try:
+        await db.leads.create_index("id", unique=True)
+    except Exception:
+        pass
+    try:
+        await db.webhook_events.create_index("event_key", unique=True)
+    except Exception:
+        pass
+    try:
+        await db.calls.create_index("provider_call_id")
+    except Exception:
+        pass
+    try:
+        await db.messages.create_index("provider_message_id")
+    except Exception:
+        pass
+        
     await seed_admin()
     await seed_team()
     await seed()
     await migrate()
-
 @api.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     try:
