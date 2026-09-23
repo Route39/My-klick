@@ -495,7 +495,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=400, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
 @api.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_current_user)):
     lead = await lead_or_403(lead_id, user)
