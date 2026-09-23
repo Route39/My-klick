@@ -448,55 +448,54 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     try:
         assigned = None
         if body.assigned_to:
-        assigned = await db.users.find_one({"id": body.assigned_to})
-    elif not is_manager(user):
-        # Auto-assign to the creator if they are not a manager
-        assigned = user
+            assigned = await db.users.find_one({"id": body.assigned_to})
+        elif not is_manager(user):
+            # Auto-assign to the creator if they are not a manager
+            assigned = user
 
-    actual_assigned_to = assigned.get("id") if assigned else None
-    actual_assigned_name = assigned.get("name") if assigned else None
+        actual_assigned_to = assigned.get("id") if assigned else None
+        actual_assigned_name = assigned.get("name") if assigned else None
 
-    lead = {
-        "id": str(uuid.uuid4()), "organization_id": org_of(user),
-        "name": body.name, "company": body.company or "",
-        "phone": body.phone, "phone_norm": norm_phone(body.phone),
-        "whatsapp": body.whatsapp or body.phone,
-        "email": body.email or "", "location": body.location or "", "product": body.product or "",
-        "source": body.source, "status": body.status, "priority": body.priority,
-        "segment": body.segment,
-        "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
-        "value": body.value, "notes": body.notes or "", "next_followup": None,
-        "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
-        "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
-        "pan_url": body.pan_url or "", "license_url": body.license_url or "",
-        "created_by": user.get("id"), "created_by_name": user.get("name", ""),
-        "created_at": now_iso(), "updated_at": now_iso(),
-    }
-    
-    if body.status == "follow_up":
-        due = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
-        lead["next_followup"] = due.isoformat()
-        fu = {
-            "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead["id"],
-            "lead_name": lead["name"], "reason": "System auto-scheduled from lead creation",
-            "assigned_to": lead["assigned_to"], "assigned_name": lead["assigned_name"],
-            "status": "pending", "due_at": lead["next_followup"],
-            "created_at": now_iso(), "updated_at": now_iso()
+        lead = {
+            "id": str(uuid.uuid4()), "organization_id": org_of(user),
+            "name": body.name, "company": body.company or "",
+            "phone": body.phone, "phone_norm": norm_phone(body.phone),
+            "whatsapp": body.whatsapp or body.phone,
+            "email": body.email or "", "location": body.location or "", "product": body.product or "",
+            "source": body.source, "status": body.status, "priority": body.priority,
+            "segment": body.segment,
+            "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
+            "value": body.value, "notes": body.notes or "", "next_followup": None,
+            "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
+            "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
+            "pan_url": body.pan_url or "", "license_url": body.license_url or "",
+            "created_by": user.get("id"), "created_by_name": user.get("name", ""),
+            "created_at": now_iso(), "updated_at": now_iso(),
         }
-        await db.followups.insert_one(dict(fu))
+        
+        if body.status == "follow_up":
+            due = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+            lead["next_followup"] = due.isoformat()
+            fu = {
+                "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead["id"],
+                "lead_name": lead["name"], "reason": "System auto-scheduled from lead creation",
+                "assigned_to": lead["assigned_to"], "assigned_name": lead["assigned_name"],
+                "status": "pending", "due_at": lead["next_followup"],
+                "created_at": now_iso(), "updated_at": now_iso()
+            }
+            await db.followups.insert_one(dict(fu))
 
-    await db.leads.insert_one(dict(lead))
-    await log_activity("lead_created", lead, user, "created a new lead")
-    
-    # Trigger background metadata lookup
-    asyncio.create_task(enrich_lead_metadata(lead["id"], lead["phone"]))
-    
-    return clean(lead)
+        await db.leads.insert_one(dict(lead))
+        await log_activity("lead_created", lead, user, "created a new lead")
+        
+        # Trigger background metadata lookup
+        asyncio.create_task(enrich_lead_metadata(lead["id"], lead["phone"]))
+        
+        return clean(lead)
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
-
 @api.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_current_user)):
     lead = await lead_or_403(lead_id, user)
