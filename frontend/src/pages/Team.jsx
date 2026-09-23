@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Trophy, Medal, Award, Plus, Loader2, Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import { Avatar } from "@/components/InitialsAvatar";
 import { ListSkeleton } from "@/components/Skeletons";
 import { formatINR } from "@/lib/constants";
+import { formatApiErrorDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -35,7 +37,7 @@ function AddTeamMemberModal({ onSuccess }) {
   const addMut = useMutation({
     mutationFn: async (data) => (await api.post("/team", data)).data,
     onSuccess: () => {
-      queryClient.invalidateQueries(["team"]);
+      queryClient.invalidateQueries({ queryKey: ["team"] });
       setOpen(false);
       setName("");
       setPhone("");
@@ -43,7 +45,8 @@ function AddTeamMemberModal({ onSuccess }) {
       setPassword("");
       setRole("sales");
       if (onSuccess) onSuccess();
-    }
+    },
+    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Failed to add member"),
   });
 
   const onSubmit = (e) => {
@@ -228,7 +231,7 @@ export default function Team() {
   const deleteMut = useMutation({
     mutationFn: async (id) => await api.delete(`/team/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries(["team"]);
+      queryClient.invalidateQueries({ queryKey: ["team"] });
       setSelectedStaff(null);
     }
   });
@@ -236,7 +239,7 @@ export default function Team() {
   const updateMut = useMutation({
     mutationFn: async ({ id, data }) => await api.put(`/team/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(["team"]);
+      queryClient.invalidateQueries({ queryKey: ["team"] });
       setSelectedStaff(null);
     }
   });

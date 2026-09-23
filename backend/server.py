@@ -1555,7 +1555,8 @@ async def migrate():
 
 @app.on_event("startup")
 async def startup():
-    # await db.users.create_index("email", unique=True)
+    await db.users.create_index("phone", unique=True)
+    await db.users.create_index("email", sparse=True)
     await db.leads.create_index("id", unique=True)
     await db.webhook_events.create_index("event_key", unique=True)
     await db.calls.create_index("provider_call_id")
@@ -1565,16 +1566,23 @@ async def startup():
     await seed()
     await migrate()
 
-
 @api.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    os.makedirs("uploads", exist_ok=True)
-    ext = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join("uploads", filename)
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return {"url": f"/uploads/{filename}"}
+async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    try:
+        os.makedirs("uploads", exist_ok=True)
+        ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'bin'
+        # Only allow safe file types
+        allowed = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'bin'}
+        if ext not in allowed:
+            ext = 'bin'
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join("uploads", filename)
+        contents = await file.read()
+        with open(filepath, "wb") as buffer:
+            buffer.write(contents)
+        return {"url": f"/uploads/{filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 @api.get("/")
 async def root():
