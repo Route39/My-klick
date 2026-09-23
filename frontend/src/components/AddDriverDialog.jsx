@@ -66,6 +66,8 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
         ...formData,
         status: defaultStatus,
         segment: "driver",
+        value: 0,
+        assigned_to: null,
         aadhaar_url,
         pan_url,
         license_url,
