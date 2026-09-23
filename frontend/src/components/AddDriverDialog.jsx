@@ -42,7 +42,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
       toast.success("Driver added successfully!");
       onOpenChange(false);
     },
-    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Failed to add driver"),
+    onError: (e) => toast.error(e.response?.data?.detail ? formatApiErrorDetail(e.response.data.detail) : `DEBUG: ${e.message} | ${e.name}`),
   });
 
   const uploadFile = async (file) => {
