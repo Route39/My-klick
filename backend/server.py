@@ -495,6 +495,9 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        with open("driver_error.log", "a") as f:
+            f.write("ERROR:\n")
+            f.write(traceback.format_exc() + "\n")
         raise HTTPException(status_code=400, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
 @api.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_current_user)):
