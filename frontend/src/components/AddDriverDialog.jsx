@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/api";
+import api, { formatApiErrorDetail } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,12 +37,12 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
   const addLead = useMutation({
     mutationFn: async (data) => (await api.post("/leads", data)).data,
     onSuccess: () => {
-      queryClient.invalidateQueries(["leads"]);
-      queryClient.invalidateQueries(["stats"]);
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
       toast.success("Driver added successfully!");
       onOpenChange(false);
     },
-    onError: (e) => toast.error("Failed to add driver"),
+    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Failed to add driver"),
   });
 
   const uploadFile = async (file) => {
