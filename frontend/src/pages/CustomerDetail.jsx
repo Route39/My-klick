@@ -16,21 +16,33 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const ACT_ICON = { lead_created: UserPlus, converted: PartyPopper, call: Phone, whatsapp: MessageCircle, followup_created: CalendarClock, followup_completed: CheckCircle2, status_change: Repeat, edit: Repeat };
 
-export default function CustomerDetail() {
+export default function CustomerDetail({ segment = "" }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: c, isLoading } = useQuery({ queryKey: ["customer", id], queryFn: async () => (await api.get(`/customers/${id}`)).data });
 
   if (isLoading || !c) return <div className="mx-auto max-w-5xl"><CardSkeleton /></div>;
 
+  if (segment && c.segment !== segment) {
+    return (
+      <div className="mx-auto max-w-lg pt-16 text-center">
+        <h2 className="mt-4 font-display text-2xl font-bold text-slate-900">Customer not found here</h2>
+        <p className="mt-1.5 text-slate-500">This customer belongs to a different segment.</p>
+        <button onClick={() => navigate(segment === "driver" ? "/drivers/customers" : "/customers")} className="mt-5 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700">
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
   const upcoming = (c.followups || []).filter((f) => f.status === "pending");
   const completed = (c.followups || []).filter((f) => f.status === "completed");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <button onClick={() => navigate("/customers")} data-testid="customer-back-btn"
+      <button onClick={() => navigate(segment === "driver" ? "/drivers/customers" : "/customers")} data-testid="customer-back-btn"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-900">
-        <ArrowLeft className="h-4 w-4" /> Customers
+        <ArrowLeft className="h-4 w-4" /> {segment === "driver" ? "Converted Drivers" : "Customers"}
       </button>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}

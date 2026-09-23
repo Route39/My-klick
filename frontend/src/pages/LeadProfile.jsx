@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FollowUpDialog } from "@/components/FollowUpDialog";
 import { EditLeadDialog } from "@/components/EditLeadDialog";
 
-export default function LeadProfile() {
+export default function LeadProfile({ segment = "" }) {
   const { id } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -87,6 +87,18 @@ export default function LeadProfile() {
   }
 
   if (isLoading || !lead) return <div className="mx-auto max-w-5xl"><CardSkeleton /></div>;
+
+  if (segment && lead.segment !== segment) {
+    return (
+      <div className="mx-auto max-w-lg pt-16 text-center">
+        <h2 className="mt-4 font-display text-2xl font-bold text-slate-900">Lead not found here</h2>
+        <p className="mt-1.5 text-slate-500">This lead belongs to a different segment.</p>
+        <button onClick={() => navigate(segment === "driver" ? "/drivers/leads" : "/leads")} className="mt-5 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700">
+          Go Back
+        </button>
+      </div>
+    );
+  }
 
   const converted = lead.status === "converted";
 
