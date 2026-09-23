@@ -52,23 +52,23 @@ export default function App() {
           <Route element={<Protected><AppShell /></Protected>}>
             <Route path="/" element={<Dashboard segment="investor" />} />
             <Route path="/leads" element={<Leads segment="investor" />} />
-            <Route path="/leads/:id" element={<LeadProfile />} />
+            <Route path="/leads/:id" element={<LeadProfile segment="investor" />} />
             <Route path="/pipeline" element={<Pipeline segment="investor" />} />
             <Route path="/followups" element={<FollowUps segment="investor" />} />
             <Route path="/customers" element={<Customers segment="investor" />} />
-            <Route path="/customers/:id" element={<CustomerDetail />} />
+            <Route path="/customers/:id" element={<CustomerDetail segment="investor" />} />
             <Route path="/team" element={<Team />} />
-            <Route path="/calls" element={<CallLogs />} />
+            <Route path="/calls" element={<CallLogs segment="investor" />} />
 
             {/* Driver Routes */}
             <Route path="/drivers" element={<DriverDashboard />} />
             <Route path="/drivers/calls" element={<CallLogs segment="driver" />} />
             <Route path="/drivers/leads" element={<DriverLeads />} />
-            <Route path="/drivers/leads/:id" element={<LeadProfile />} />
+            <Route path="/drivers/leads/:id" element={<LeadProfile segment="driver" />} />
             <Route path="/drivers/pipeline" element={<DriverPipeline />} />
             <Route path="/drivers/followups" element={<DriverFollowUps />} />
             <Route path="/drivers/customers" element={<DriverCustomers />} />
-            <Route path="/drivers/customers/:id" element={<CustomerDetail />} />
+            <Route path="/drivers/customers/:id" element={<CustomerDetail segment="driver" />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
