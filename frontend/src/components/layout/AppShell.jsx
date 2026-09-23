@@ -29,7 +29,7 @@ const DRIVER_NAV = [
   { to: "/drivers/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
-  { to: "/drivers/customers", label: "Customers", icon: UserCheck },
+  { to: "/drivers/customers", label: "Converted Drivers", icon: UserCheck },
 ];
 
 export default function AppShell() {
