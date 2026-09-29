@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, KanbanSquare, CalendarClock, UserCheck, BarChart3,
-  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone,
+  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox,
 } from "lucide-react";
+import { CommonLeadsNotifier } from "@/components/CommonLeadsNotifier";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/leads", label: "Leads", icon: Users },
+  { to: "/common-leads", label: "Common Leads", icon: Inbox },
   { to: "/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/followups", label: "Follow-ups", icon: CalendarClock },
@@ -26,6 +28,7 @@ const NAV = [
 const DRIVER_NAV = [
   { to: "/drivers", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/drivers/leads", label: "Drivers", icon: Users },
+  { to: "/drivers/common-leads", label: "Common Leads", icon: Inbox },
   { to: "/drivers/calls", label: "RouteCall Logs", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
@@ -58,6 +61,7 @@ export default function AppShell() {
 
   return (
     <CallProvider>
+      <CommonLeadsNotifier />
       <div className="min-h-screen bg-background">
         {/* ── Sidebar (desktop only) ── */}
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200/70 bg-white lg:flex">

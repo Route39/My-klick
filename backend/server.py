@@ -194,6 +194,7 @@ class LeadIn(BaseModel):
     priority: str = "medium"
     segment: str = "investor"
     assigned_to: Optional[str] = None
+    is_common: bool = False
     value: float = 0
     notes: Optional[str] = ""
     no_of_vehicles: Optional[str] = ""
@@ -379,7 +380,7 @@ async def list_leads(
     date_from: Optional[str] = None, date_to: Optional[str] = None, user: dict = Depends(get_current_user),
 ):
     base = {}
-    
+
     if date_from or date_to:
         created_filter = {}
         if date_from:
@@ -391,6 +392,7 @@ async def list_leads(
 
     if segment:
         base["segment"] = seg_match(segment)
+    base["is_common"] = {"$ne": True}  # unclaimed common leads live in /common-leads
     if status:
         base["status"] = status
     elif exclude_status:
@@ -407,6 +409,46 @@ async def list_leads(
         ]
     leads = await db.leads.find(scope_leads(user, base)).sort("updated_at", -1).to_list(2000)
     return [clean(l) for l in leads]
+
+# ---------------------------------------------------------------------------
+# Common leads: admin-posted pool that any staff can see and claim
+# ---------------------------------------------------------------------------
+def common_query(user: dict, segment: Optional[str] = None) -> dict:
+    q = {"organization_id": org_of(user), "is_common": True, "assigned_to": None}
+    if segment:
+        q["segment"] = segment
+    return q
+
+@api.get("/common-leads")
+async def list_common_leads(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
+    leads = await db.leads.find(common_query(user, segment)).sort("created_at", -1).to_list(2000)
+    return [clean(l) for l in leads]
+
+@api.get("/common-leads/latest")
+async def latest_common_leads(since: str, user: dict = Depends(get_current_user)):
+    """Polled by every staff for the popup + sound notification."""
+    q = common_query(user)
+    q["created_at"] = {"$gt": since}
+    q["created_by"] = {"$ne": user["id"]}
+    leads = await db.leads.find(q).sort("created_at", 1).to_list(50)
+    return [{"id": l["id"], "name": l.get("name"), "segment": l.get("segment", "investor"),
+             "created_at": l.get("created_at"), "created_by_name": l.get("created_by_name", "")} for l in leads]
+
+@api.post("/common-leads/{lead_id}/claim")
+async def claim_common_lead(lead_id: str, user: dict = Depends(get_current_user)):
+    """Atomic claim: only the first staff to click gets it."""
+    lead = await db.leads.find_one_and_update(
+        {"id": lead_id, "organization_id": org_of(user), "is_common": True, "assigned_to": None},
+        {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
+                  "is_common": False, "claimed_at": now_iso(), "updated_at": now_iso()}},
+        return_document=True,
+    )
+    if not lead:
+        raise HTTPException(status_code=409, detail="This lead was already taken by someone else")
+    await db.followups.update_many({"lead_id": lead_id, "assigned_to": None},
+                                   {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", "")}})
+    await log_activity("lead_claimed", lead, user, "assigned a common lead to themselves")
+    return clean(lead)
 
 @api.get("/leads/{lead_id}")
 async def get_lead(lead_id: str, user: dict = Depends(get_current_user)):
@@ -461,7 +503,10 @@ async def get_lead_metadata(lead_id: str, user: dict = Depends(get_current_user)
 async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     try:
         assigned = None
-        if body.assigned_to:
+        is_common = bool(body.is_common and is_manager(user))
+        if is_common:
+            assigned = None  # common pool: no owner until a staff claims it
+        elif body.assigned_to:
             assigned = await db.users.find_one({"id": body.assigned_to})
         elif not is_manager(user):
             # Auto-assign to the creator if they are not a manager
@@ -477,7 +522,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             "whatsapp": body.whatsapp or body.phone,
             "email": body.email or "", "location": body.location or "", "product": body.product or "",
             "source": body.source, "status": body.status, "priority": body.priority,
-            "segment": body.segment,
+            "segment": body.segment, "is_common": is_common,
             "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
             "value": body.value, "notes": body.notes or "", "next_followup": None,
             "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
@@ -520,6 +565,7 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     if body.assigned_to:
         assigned = await db.users.find_one({"id": body.assigned_to})
     update = body.model_dump()
+    update.pop("is_common", None)
     update["assigned_name"] = assigned["name"] if assigned else None
     update["whatsapp"] = body.whatsapp or body.phone
     update["phone_norm"] = norm_phone(body.phone)
@@ -725,9 +771,9 @@ async def complete_call(call_id: str, body: CallCompleteIn, user: dict = Depends
         # Auto-update lead status
         new_status = lead.get("status")
         if body.duration_seconds == 0:
-            new_status = "Ring Not Response"
-        elif body.duration_seconds > 0 and lead.get("status") in ("New", "Ring Not Response"):
-            new_status = "Contacted"
+            new_status = "rnr"
+        elif body.duration_seconds > 0 and lead.get("status") in ("new", "rnr"):
+            new_status = "contacted"
         
         if new_status != lead.get("status"):
             await db.leads.update_one({"id": lead["id"]}, {"$set": {"status": new_status, "updated_at": now_iso()}})
@@ -1323,7 +1369,7 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
 # ---------------------------------------------------------------------------
 @api.get("/dashboard/stats")
 async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
-    base = {}
+    base = {"is_common": {"$ne": True}}
     if segment:
         base["segment"] = seg_match(segment)
     all_leads = await db.leads.find(scope_leads(user, base)).to_list(5000)
@@ -1610,7 +1656,7 @@ async def startup():
         pass
 
     try:
-        await db.users.create_index("phone", unique=True)
+        await db.users.create_index("phone", unique=True, partialFilterExpression={"phone": {"$type": "string"}})
     except Exception:
         pass
     try:

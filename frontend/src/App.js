@@ -6,6 +6,7 @@ import AppShell from "@/components/layout/AppShell";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Leads from "@/pages/Leads";
+import CommonLeads from "@/pages/CommonLeads";
 import Pipeline from "@/pages/Pipeline";
 import LeadProfile from "@/pages/LeadProfile";
 import FollowUps from "@/pages/FollowUps";
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="/" element={<Dashboard segment="investor" />} />
             <Route path="/leads" element={<Leads segment="investor" />} />
             <Route path="/leads/:id" element={<LeadProfile segment="investor" />} />
+            <Route path="/common-leads" element={<CommonLeads key="investor" segment="investor" />} />
             <Route path="/pipeline" element={<Pipeline segment="investor" />} />
             <Route path="/followups" element={<FollowUps segment="investor" />} />
             <Route path="/customers" element={<Customers segment="investor" />} />
@@ -65,6 +67,7 @@ export default function App() {
             <Route path="/drivers/calls" element={<CallLogs segment="driver" />} />
             <Route path="/drivers/leads" element={<DriverLeads segment="driver" />} />
             <Route path="/drivers/leads/:id" element={<LeadProfile segment="driver" />} />
+            <Route path="/drivers/common-leads" element={<CommonLeads key="driver" segment="driver" />} />
             <Route path="/drivers/pipeline" element={<DriverPipeline segment="driver" />} />
             <Route path="/drivers/followups" element={<DriverFollowUps segment="driver" />} />
             <Route path="/drivers/customers" element={<DriverCustomers segment="driver" />} />

@@ -14,7 +14,7 @@ export default function Pipeline({ segment = "" }) {
   const [overCol, setOverCol] = useState(null);
 
   const { data: leads = [], isLoading } = useQuery({
-    queryKey: ["leads", ""], queryFn: async () => (await api.get("/leads")).data,
+    queryKey: ["leads", "", "investor"], queryFn: async () => (await api.get("/leads", { params: { segment: "investor" } })).data,
     refetchInterval: 15000,
     placeholderData: (prev) => prev,
   });
@@ -22,13 +22,13 @@ export default function Pipeline({ segment = "" }) {
   const move = useMutation({
     mutationFn: async ({ id, status }) => (await api.patch(`/leads/${id}/stage`, { status })).data,
     onMutate: async ({ id, status }) => {
-      await qc.cancelQueries({ queryKey: ["leads", ""] });
-      const prev = qc.getQueryData(["leads", ""]);
+      await qc.cancelQueries({ queryKey: ["leads", "", "investor"] });
+      const prev = qc.getQueryData(["leads", "", "investor"]);
       // Optimistic update: move card immediately, no flicker
-      qc.setQueryData(["leads", ""], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
+      qc.setQueryData(["leads", "", "investor"], (old = []) => old.map((l) => l.id === id ? { ...l, status } : l));
       return { prev };
     },
-    onError: (e, v, ctx) => { qc.setQueryData(["leads", ""], ctx.prev); toast.error("Could not move lead"); },
+    onError: (e, v, ctx) => { qc.setQueryData(["leads", "", "investor"], ctx.prev); toast.error("Could not move lead"); },
     onSuccess: (_d, { id, status, name }) => {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead-followups", id] });
