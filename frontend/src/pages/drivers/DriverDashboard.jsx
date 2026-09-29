@@ -73,7 +73,7 @@ export default function DriverDashboard({ segment = "driver" }) {
             icon={CalendarClock} accent="#F59E0B" pct={stats.follow_ups.total ? Math.round(stats.follow_ups.due_today / stats.follow_ups.total * 100) : 0} />
           <RingCard label="Calls" value={stats.calls.total} sub={`${stats.calls.connected} connected`}
             icon={Phone} accent="#6366F1" rate={stats.calls.rate} />
-          <SnapshotCard label="Conversions" value={stats.conversions.total} sub={`+${stats.conversions.delta_pct}%`}
+          <SnapshotCard label="Conversions" value={stats.conversions.total} sub={`${stats.conversions.delta_pct >= 0 ? "+" : ""}${stats.conversions.delta_pct}% vs last week`}
             icon={TrendingUp} accent="#10B981" spark={stats.conversions.spark} line testid="stat-conversions" />
         </div>
       )}

@@ -32,7 +32,7 @@ export default function DriverLeads({ segment = "driver" }) {
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads", status, "driver"],
     queryFn: async () => {
-      const params = status ? { status, segment: "driver" } : { exclude_status: "follow_up", segment: "driver" };
+      const params = status ? { status, segment: "driver" } : { segment: "driver" };
       return (await api.get("/leads", { params })).data;
     },
     refetchInterval: 15000,

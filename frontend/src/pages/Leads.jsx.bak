@@ -56,7 +56,7 @@ export default function Leads({ segment = "" }) {
       if (status && status !== "all") {
         queryParams += `&status=${status}`;
       } else if (!status) {
-        
+        queryParams += `&exclude_status=follow_up`;
       }
       
       if (date_from) queryParams += `&date_from=${date_from}`;
