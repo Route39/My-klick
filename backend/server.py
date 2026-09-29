@@ -48,6 +48,17 @@ logger = logging.getLogger("myklick")
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def ist_date(v):
+    d = v if isinstance(v, datetime) else datetime.fromisoformat(v)
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.astimezone(IST).date()
+
+def today_ist():
+    return datetime.now(IST).date()
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -81,6 +92,9 @@ def org_of(user: dict) -> str:
 
 def is_manager(user: dict) -> bool:
     return user.get("role") in ("admin", "team_leader")
+
+def seg_match(segment):
+    return {"$in": ["investor", None]} if segment == "investor" else segment
 
 def scope_leads(user: dict, base: dict = None) -> dict:
     """Organisation + role scoping for lead queries."""
@@ -376,7 +390,7 @@ async def list_leads(
             base["created_at"] = created_filter
 
     if segment:
-        base["segment"] = segment
+        base["segment"] = seg_match(segment)
     if status:
         base["status"] = status
     elif exclude_status:
@@ -870,6 +884,7 @@ async def webhook_call(request: Request):
         call = {
             "id": str(uuid.uuid4()), "organization_id": DEFAULT_ORG,
             "lead_id": lead["id"] if lead else None,
+            "segment": (lead or {}).get("segment") or "investor",
             "provider": "exotel", "provider_call_id": call_id,
             "direction": "incoming" if "in" in direction else "outgoing",
             "status": status, "from_number": from_num, "to_number": to_num,
@@ -967,7 +982,7 @@ async def get_exotel_calls(
     q = {"provider": "exotel", "organization_id": org_of(user)}
     
     if segment:
-        q["segment"] = segment
+        q["segment"] = seg_match(segment)
         
     if date_from or date_to:
         created_filter = {}
@@ -1001,8 +1016,10 @@ async def initiate_manual_call(body: ManualCallIn, user: dict = Depends(get_curr
     except comm.CommunicationError as e:
         raise HTTPException(status_code=502, detail=f"Exotel error: {str(e)}")
 
+    m_lead = await find_lead_by_phone(to_num, org_of(user))
     call = {
-        "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": None,
+        "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": (m_lead or {}).get("id"),
+        "segment": (m_lead or {}).get("segment") or body.segment or "investor",
         "provider": adapter.provider, "provider_call_id": result.get("provider_call_id"),
         "direction": "outgoing", "status": result.get("status", "initiated"),
         "from_number": body.from_number, "to_number": body.to_number,
@@ -1070,10 +1087,12 @@ async def list_followups(scope: str = "all", segment: Optional[str] = None, user
     if not is_manager(user):
         base["assigned_to"] = user["id"]
     if segment:
-        leads = await db.leads.find({"segment": segment}).to_list(None)
+        leads = await db.leads.find({"segment": seg_match(segment)}).to_list(None)
         lead_ids = [l["id"] for l in leads]
         base["lead_id"] = {"$in": lead_ids}
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
+    _fu_ok = {l["id"] for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"}).to_list(None)}
+    fs = [f for f in fs if f.get("lead_id") in _fu_ok]
     now = datetime.now(timezone.utc)
     out = []
     for f in fs:
@@ -1082,7 +1101,7 @@ async def list_followups(scope: str = "all", segment: Optional[str] = None, user
         except Exception:
             continue
         overdue = due < now
-        today = due.date() == now.date()
+        today = ist_date(due) == today_ist()
         if scope == "today" and not today:
             continue
         if scope == "overdue" and not overdue:
@@ -1166,12 +1185,14 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
     if not is_manager(user):
         base["assigned_to"] = user["id"]
     if segment:
-        seg_leads = await db.leads.find({"segment": segment, "organization_id": org_of(user)}).to_list(None)
+        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
         base["lead_id"] = {"$in": [l["id"] for l in seg_leads]}
     
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
+    _fu_ok = {l["id"] for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"}).to_list(None)}
+    fs = [f for f in fs if f.get("lead_id") in _fu_ok]
     now = datetime.now(timezone.utc)
-    today = now.date()
+    today = today_ist()
 
     overdue, today_list = [], []
     for f in fs:
@@ -1180,11 +1201,11 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
         except Exception:
             continue
         (overdue if due < now else today_list).append((due, f))
-    today_only = [x for x in today_list if x[0].date() == today]
+    today_only = [x for x in today_list if ist_date(x[0]) == today]
 
     lead_scope = {"priority": "high", "status": {"$nin": ["converted", "lost"]}}
     if segment:
-        lead_scope["segment"] = segment
+        lead_scope["segment"] = seg_match(segment)
     lead_scope = scope_leads(user, lead_scope)
     high_leads = await db.leads.find(lead_scope).to_list(500)
 
@@ -1247,7 +1268,7 @@ async def list_customers(segment: Optional[str] = None, user: dict = Depends(get
     if not is_manager(user):
         base["assigned_to"] = user["id"]
     if segment:
-        base["segment"] = segment
+        base["segment"] = seg_match(segment)
     cs = await db.customers.find(base).sort("converted_at", -1).to_list(1000)
     return [clean(c) for c in cs]
 
@@ -1275,7 +1296,7 @@ async def activities(limit: int = 20, segment: Optional[str] = None, user: dict 
     if not is_manager(user):
         q["user_id"] = user["id"]
     if segment:
-        seg_leads = await db.leads.find({"segment": segment, "organization_id": org_of(user)}).to_list(None)
+        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
         seg_lead_ids = [l["id"] for l in seg_leads]
         q["lead_id"] = {"$in": seg_lead_ids}
     acts = await db.activities.find(q).sort("created_at", -1).to_list(limit)
@@ -1289,8 +1310,8 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
     lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]})
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
     if segment:
-        lead_q["segment"] = segment
-        cust_q["segment"] = segment
+        lead_q["segment"] = seg_match(segment)
+        cust_q["segment"] = seg_match(segment)
     leads = await db.leads.find(lead_q).to_list(10)
     if not is_manager(user):
         cust_q["assigned_to"] = user["id"]
@@ -1304,32 +1325,39 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
 async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {}
     if segment:
-        base["segment"] = segment
+        base["segment"] = seg_match(segment)
     all_leads = await db.leads.find(scope_leads(user, base)).to_list(5000)
     lead_ids = [l["id"] for l in all_leads]
     now = datetime.now(timezone.utc)
-    today = now.date()
+    today = today_ist()
 
     def created_on(l, d):
         try:
-            return datetime.fromisoformat(l["created_at"]).date() == d
+            return ist_date(l["created_at"]) == d
         except Exception:
             return False
 
     new_today = len([l for l in all_leads if created_on(l, today)])
     funnel = {s: len([l for l in all_leads if l.get("status") == s]) for s in STATUSES}
 
-    calls = await db.calls.find({"lead_id": {"$in": lead_ids}}).to_list(5000)
+    loose = {"lead_id": None, "organization_id": org_of(user)}
+    if segment:
+        loose["segment"] = seg_match(segment)
+    if not is_manager(user):
+        loose["user_id"] = user["id"]
+    calls = await db.calls.find({"$or": [{"lead_id": {"$in": lead_ids}}, loose]}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
     fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}
     if not is_manager(user):
         fu_base["assigned_to"] = user["id"]
     followups = await db.followups.find(fu_base).to_list(2000)
+    _fu_ok = {l["id"] for l in all_leads if l.get("status") == "follow_up"}
+    followups = [f for f in followups if f.get("lead_id") in _fu_ok]
     fu_today = 0
     for f in followups:
         try:
-            if datetime.fromisoformat(f["due_at"]).date() == today:
+            if ist_date(f["due_at"]) == today:
                 fu_today += 1
         except Exception:
             pass
@@ -1353,19 +1381,29 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
             c = 0
             for it in items:
                 try:
-                    if datetime.fromisoformat(it[key_date]).date() == d:
+                    if ist_date(it[key_date]) == d:
                         c += 1
                 except Exception:
                     pass
             counts.append(c)
         return counts
 
+    conv_items = [{"d": l.get("converted_at") or l.get("updated_at") or l.get("created_at")} for l in converted]
+    def _in(it, a, b):
+        try:
+            return a <= ist_date(it["d"]) <= b
+        except Exception:
+            return False
+    wk = len([c for c in conv_items if _in(c, today - timedelta(days=6), today)])
+    pw = len([c for c in conv_items if _in(c, today - timedelta(days=13), today - timedelta(days=7))])
+    conv_delta = round((wk - pw) / pw * 100) if pw else (100 if wk else 0)
+
     return {
         "new_leads": {"total": len(all_leads), "delta_today": new_today, "spark": spark(all_leads, "created_at")},
         "follow_ups": {"total": len(followups), "due_today": fu_today},
         "calls": {"total": len(calls), "connected": connected,
                   "rate": round(connected / (len(calls) or 1) * 100)},
-        "conversions": {"total": len(converted), "delta_pct": 24, "spark": spark(converted, "created_at")},
+        "conversions": {"total": len(converted), "delta_pct": conv_delta, "spark": spark(conv_items, "d")},
         "funnel": funnel, "sources": sources,
     }
 
