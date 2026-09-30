@@ -92,6 +92,7 @@ function AddTeamMemberModal({ onSuccess }) {
                   <SelectContent className="rounded-xl border-slate-200">
                     <SelectItem value="sales" className="rounded-lg">Sales Exec</SelectItem>
                     <SelectItem value="team_leader" className="rounded-lg">Team Leader</SelectItem>
+                  <SelectItem value="admin_staff" className="rounded-lg">Admin + Staff</SelectItem>
                     <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
                   </SelectContent>
                 </Select>
@@ -181,6 +182,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
                 <SelectContent className="rounded-xl border-slate-200">
                   <SelectItem value="sales" className="rounded-lg">Sales Exec</SelectItem>
                   <SelectItem value="team_leader" className="rounded-lg">Team Leader</SelectItem>
+                  <SelectItem value="admin_staff" className="rounded-lg">Admin + Staff</SelectItem>
                   <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
                 </SelectContent>
               </Select>

@@ -58,6 +58,7 @@ export default function CommonLeads({ segment = "investor" }) {
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const isManager = ["admin", "team_leader"].includes(user?.role);
+  const canPost = isManager || user?.role === "admin_staff";
   const myLeadsPath = segment === "driver" ? "/drivers/leads" : "/leads";
 
   const { data: leads = [], isLoading } = useQuery({
@@ -91,7 +92,7 @@ export default function CommonLeads({ segment = "investor" }) {
             {leads.length} open {segment === "driver" ? "driver" : "investor"} leads · first to assign gets it
           </p>
         </div>
-        {isManager && (
+        {canPost && (
           <Button className="rounded-xl" onClick={() => setAddOpen(true)}>
             <Plus className="mr-1 h-4 w-4" /> Common Lead
           </Button>
@@ -100,7 +101,7 @@ export default function CommonLeads({ segment = "investor" }) {
 
       {isLoading ? <ListSkeleton /> : leads.length === 0 ? (
         <EmptyState icon={Inbox} title="No common leads right now"
-          subtitle={isManager ? "Post a lead here and every staff member gets notified." : "You'll hear a sound when admin posts a new one."} />
+          subtitle={canPost ? "Post a lead here and every staff member gets notified." : "You'll hear a sound when admin posts a new one."} />
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white">
           {leads.map((l) => (
