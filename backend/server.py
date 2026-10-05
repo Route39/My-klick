@@ -90,6 +90,13 @@ def norm_phone(p: str) -> str:
 def org_of(user: dict) -> str:
     return user.get("organization_id") or DEFAULT_ORG
 
+def can_view_team(user: dict) -> bool:
+    return user.get("role") in ("admin", "team_leader", "admin_staff")
+
+def can_view_all(user: dict) -> bool:
+    """Access to everyone's data: admin, team leader, admin+staff."""
+    return user.get("role") in ("admin", "team_leader", "admin_staff")
+
 def is_manager(user: dict) -> bool:
     return user.get("role") in ("admin", "team_leader")
 
@@ -100,7 +107,7 @@ def scope_leads(user: dict, base: dict = None) -> dict:
     """Organisation + role scoping for lead queries."""
     q = dict(base or {})
     q["organization_id"] = org_of(user)
-    if not is_manager(user):
+    if not can_view_all(user):
         q["assigned_to"] = user["id"]
     return q
 
@@ -128,7 +135,7 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
     lead = await db.leads.find_one({"id": lead_id})
     if not lead or lead.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Lead not found")
-    if not is_manager(user):
+    if not can_view_all(user):
         # Staff can access leads they are assigned to OR leads they created
         can_access = (
             lead.get("assigned_to") == user["id"] or
@@ -305,7 +312,7 @@ async def list_users(user: dict = Depends(get_current_user)):
 
 @api.post("/team")
 async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_user)):
-    if not is_manager(user):
+    if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Not authorized")
         
     existing = await db.users.find_one({"phone": body.phone.strip()})
@@ -324,7 +331,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
 
 @api.delete("/team/{user_id}")
 async def delete_team_member(user_id: str, user: dict = Depends(get_current_user)):
-    if not is_manager(user):
+    if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     target_user = await db.users.find_one({"id": user_id, "organization_id": org_of(user)})
@@ -334,7 +341,7 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
 
 @api.put("/team/{user_id}")
 async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = Depends(get_current_user)):
-    if not is_manager(user) and user["id"] != user_id:
+    if not can_view_all(user) and user["id"] != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = {
@@ -350,11 +357,48 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
     )
     return {"ok": True}
 
+class NoteIn(BaseModel):
+    text: str
+
+def can_view_all_notes(user: dict) -> bool:
+    return user.get("role") in ("admin", "admin_staff")
+
+@api.post("/notes")
+async def create_note(body: NoteIn, user: dict = Depends(get_current_user)):
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Note is empty")
+    if len(text) > 5000:
+        raise HTTPException(status_code=400, detail="Note is too long")
+    doc = {
+        "id": str(uuid.uuid4()), "organization_id": org_of(user),
+        "user_id": user.get("id"), "user_name": user.get("name", ""), "user_role": user.get("role", ""),
+        "text": text, "status": "new", "noted_by": None, "noted_at": None, "created_at": now_iso(),
+    }
+    await db.notes.insert_one(dict(doc))
+    return clean(doc)
+
+@api.get("/notes")
+async def list_notes(user: dict = Depends(get_current_user)):
+    q = {"organization_id": org_of(user)}
+    if not can_view_all_notes(user):
+        q["user_id"] = user.get("id")
+    notes = await db.notes.find(q).sort("created_at", -1).to_list(1000)
+    return [clean(n) for n in notes]
+
+@api.post("/notes/{note_id}/noted")
+async def mark_note_noted(note_id: str, user: dict = Depends(get_current_user)):
+    if not can_view_all_notes(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await db.notes.update_one({"id": note_id, "organization_id": org_of(user)},
+                              {"$set": {"status": "noted", "noted_by": user.get("name", ""), "noted_at": now_iso()}})
+    return {"ok": True}
+
 @api.get("/team/activity")
 async def team_activity(period: str = "today", start: str = "", end: str = "",
                         user: dict = Depends(get_current_user)):
-    """Per-member call activity for a date range (IST). Managers only."""
-    if not is_manager(user):
+    """Per-member activity report for a date range (IST). Admin, team leader, admin+staff."""
+    if not can_view_team(user):
         raise HTTPException(status_code=403, detail="Not authorized")
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -375,46 +419,91 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         raise HTTPException(status_code=400, detail="Invalid date")
     if e <= s:
         raise HTTPException(status_code=400, detail="End date must be after start date")
-    s_iso = s.astimezone(timezone.utc).isoformat()
-    e_iso = e.astimezone(timezone.utc).isoformat()
+    rng = {"$gte": s.astimezone(timezone.utc).isoformat(), "$lt": e.astimezone(timezone.utc).isoformat()}
 
     org = org_of(user)
     users = await db.users.find({"organization_id": org}).to_list(500)
-    calls = await db.calls.find({
-        "organization_id": org, "user_id": {"$ne": None},
-        "created_at": {"$gte": s_iso, "$lt": e_iso},
-    }).to_list(50000)
+    calls = await db.calls.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng}).to_list(50000)
+    acts = await db.activities.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng,
+                                     "type": {"$in": ["converted", "status_change"]}}).to_list(50000)
+    created = await db.leads.find({"organization_id": org, "created_at": rng,
+                                   "$or": [{"is_common": True}, {"created_as_common": True},
+                                           {"claimed_at": {"$exists": True}}]}).to_list(50000)
+    new_rnr = await db.leads.find({"organization_id": org, "created_at": rng, "status": "rnr"}).to_list(50000)
+    new_interested = await db.leads.find({"organization_id": org, "created_at": rng,
+                                          "segment": "driver", "status": "interested"}).to_list(50000)
+
+    lead_ids = {c.get("lead_id") for c in calls if c.get("lead_id")} | {a.get("lead_id") for a in acts if a.get("lead_id")}
+    leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": list(lead_ids)}}).to_list(50000)} if lead_ids else {}
+    custs = {c["lead_id"]: c for c in await db.customers.find({"lead_id": {"$in": list(lead_ids)}}).to_list(50000)} if lead_ids else {}
 
     connected_states = getattr(comm, "CONNECTED_STATES", {"answered", "completed", "connected"})
-    stats = {}
+
+    def blank():
+        return {"total_calls": 0, "connected": 0, "talk_seconds": 0, "tele_call": 0,
+                "spoke_investor": set(), "spoke_driver": set(), "prev_followup": set(),
+                "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set()}
+    st = {}
+
     for c in calls:
-        st = stats.setdefault(c["user_id"], {"dialed": 0, "connected": 0, "talk_seconds": 0,
-                                             "leads": set(), "leads_spoken": set()})
-        st["dialed"] += 1
+        x = st.setdefault(c["user_id"], blank())
+        x["total_calls"] += 1
         dur = int(c.get("duration_seconds") or 0)
-        if c.get("lead_id"):
-            st["leads"].add(c["lead_id"])
+        lid = c.get("lead_id")
+        lead = leads.get(lid) or {}
+        seg = lead.get("segment") or c.get("segment") or "investor"
+        if lead.get("status") == "converted" and seg == "investor":
+            conv_at = (custs.get(lid) or {}).get("converted_at") or ""
+            if c.get("created_at", "") >= conv_at:
+                x["prev_followup"].add(lid)
         if c.get("status") in connected_states or dur > 0:
-            st["connected"] += 1
-            st["talk_seconds"] += dur
-            if c.get("lead_id"):
-                st["leads_spoken"].add(c["lead_id"])
+            x["connected"] += 1
+            x["talk_seconds"] += dur
+            if lid:
+                x["spoke_driver" if seg == "driver" else "spoke_investor"].add(lid)
+
+    for a in acts:
+        x = st.setdefault(a["user_id"], blank())
+        lid = a.get("lead_id")
+        seg = (leads.get(lid) or {}).get("segment") or "investor"
+        if a.get("type") == "converted" and seg == "investor" and lid not in x["conv_investor"]:
+            x["conv_investor"].add(lid)
+            try:
+                x["payment"] += float((a.get("meta") or {}).get("value") or 0)
+            except (TypeError, ValueError):
+                pass
+        elif a.get("type") == "status_change" and seg == "driver" and (a.get("meta") or {}).get("to") == "interested":
+            x["interested_driver"].add(lid)
+        if a.get("type") == "status_change" and (a.get("meta") or {}).get("to") == "rnr" and lid:
+            x["rnr"].add(lid)
+
+    for l in created:
+        if l.get("created_by"):
+            st.setdefault(l["created_by"], blank())["tele_call"] += 1
+    for l in new_interested:
+        if l.get("created_by"):
+            st.setdefault(l["created_by"], blank())["interested_driver"].add(l["id"])
+
+    for l in new_rnr:
+        if l.get("created_by"):
+            st.setdefault(l["created_by"], blank())["rnr"].add(l["id"])
 
     rows = []
     for u in users:
-        uid = u.get("id")
-        st = stats.get(uid, {"dialed": 0, "connected": 0, "talk_seconds": 0,
-                             "leads": set(), "leads_spoken": set()})
+        uid = u.get("id") or str(u.get("_id", ""))
+        x = st.get(uid, blank())
         rows.append({
-            "id": uid, "name": u.get("name", ""), "role": u.get("role", ""),
+            "id": uid, "name": u.get("name", ""), "role": u.get("role", ""), "rnr": len(x["rnr"]),
             "location": u.get("location", ""),
-            "dialed": st["dialed"], "connected": st["connected"],
-            "leads_called": len(st["leads"]), "leads_spoken": len(st["leads_spoken"]),
-            "talk_seconds": st["talk_seconds"],
-            "connect_rate": round(st["connected"] * 100 / st["dialed"]) if st["dialed"] else 0,
+            "total_calls": x["total_calls"], "tele_call": x["tele_call"],
+            "spoke_investor": len(x["spoke_investor"]), "spoke_driver": len(x["spoke_driver"]),
+            "prev_followup": len(x["prev_followup"]), "conv_investor": len(x["conv_investor"]),
+            "interested_driver": len(x["interested_driver"]), "payment": round(x["payment"], 2),
+            "connected": x["connected"], "talk_seconds": x["talk_seconds"],
         })
-    rows.sort(key=lambda r: (r["leads_spoken"], r["connected"], r["dialed"]), reverse=True)
-    keys = ("dialed", "connected", "leads_called", "leads_spoken", "talk_seconds")
+    rows.sort(key=lambda r: (r["conv_investor"], r["spoke_investor"] + r["spoke_driver"], r["total_calls"]), reverse=True)
+    keys = ("total_calls", "tele_call", "spoke_investor", "spoke_driver", "prev_followup",
+            "conv_investor", "interested_driver", "payment", "connected", "talk_seconds", "rnr")
     totals = {k: sum(r[k] for r in rows) for k in keys}
     return {"from": s.date().isoformat(), "to": (e - one_day).date().isoformat(),
             "rows": rows, "totals": totals}
@@ -422,7 +511,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
 @api.get("/team")
 async def team_performance(user: dict = Depends(get_current_user)):
     users = await db.users.find({"organization_id": org_of(user)}).to_list(200)
-    if not is_manager(user):
+    if not can_view_team(user):
         users = [u for u in users if u.get("id") == user.get("id")]
     out = []
     for u in users:
@@ -471,7 +560,7 @@ async def list_leads(
         base["status"] = {"$ne": exclude_status}
     if source:
         base["source"] = source
-    if assigned_to and is_manager(user):
+    if assigned_to and can_view_all(user):
         base["assigned_to"] = assigned_to
     if q:
         base["$or"] = [
@@ -897,7 +986,7 @@ async def call_recording(call_id: str, user: dict = Depends(get_current_user)):
     call = await db.calls.find_one({"id": call_id})
     if not call or call.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Call not found")
-    if not is_manager(user) and call.get("user_id") != user["id"]:
+    if not can_view_all(user) and call.get("user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized to access this recording")
     if not call.get("recording_url"):
         raise HTTPException(status_code=404, detail="No recording available")
@@ -1111,7 +1200,7 @@ async def get_exotel_calls(
         if created_filter:
             q["created_at"] = created_filter
 
-    if is_manager(user):
+    if can_view_all(user):
         if staff_id and staff_id != "all":
             q["user_id"] = staff_id
     else:
@@ -1202,7 +1291,7 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
 @api.get("/followups")
 async def list_followups(scope: str = "all", segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"status": "pending", "organization_id": org_of(user)}
-    if not is_manager(user):
+    if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
         leads = await db.leads.find({"segment": seg_match(segment)}).to_list(None)
@@ -1300,7 +1389,7 @@ async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
 async def briefing(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     # Scope followups by segment if provided
     base = {"status": "pending", "organization_id": org_of(user)}
-    if not is_manager(user):
+    if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
         seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
@@ -1383,7 +1472,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
 @api.get("/customers")
 async def list_customers(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"organization_id": org_of(user)}
-    if not is_manager(user):
+    if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
         base["segment"] = seg_match(segment)
@@ -1395,7 +1484,7 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
     c = await db.customers.find_one({"id": cid})
     if not c or c.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Customer not found")
-    if not is_manager(user) and c.get("assigned_to") != user["id"]:
+    if not can_view_all(user) and c.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     c = clean(c)
     lid = c["lead_id"]
@@ -1411,7 +1500,7 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
 @api.get("/activities")
 async def activities(limit: int = 20, segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     q = {"organization_id": org_of(user)}
-    if not is_manager(user):
+    if not can_view_all(user):
         q["user_id"] = user["id"]
     if segment:
         seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
@@ -1431,7 +1520,7 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
         lead_q["segment"] = seg_match(segment)
         cust_q["segment"] = seg_match(segment)
     leads = await db.leads.find(lead_q).to_list(10)
-    if not is_manager(user):
+    if not can_view_all(user):
         cust_q["assigned_to"] = user["id"]
     custs = await db.customers.find(cust_q).to_list(10)
     return {"leads": [clean(l) for l in leads], "customers": [clean(c) for c in custs]}
@@ -1461,13 +1550,13 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
     loose = {"lead_id": None, "organization_id": org_of(user)}
     if segment:
         loose["segment"] = seg_match(segment)
-    if not is_manager(user):
+    if not can_view_all(user):
         loose["user_id"] = user["id"]
     calls = await db.calls.find({"$or": [{"lead_id": {"$in": lead_ids}}, loose]}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
     fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}
-    if not is_manager(user):
+    if not can_view_all(user):
         fu_base["assigned_to"] = user["id"]
     followups = await db.followups.find(fu_base).to_list(2000)
     _fu_ok = {l["id"] for l in all_leads if l.get("status") == "follow_up"}
@@ -1531,7 +1620,7 @@ async def get_config(user: dict = Depends(get_current_user)):
 
 @api.get("/config/balance")
 async def get_balance(user: dict = Depends(get_current_user)):
-    if not is_manager(user):
+    if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Only managers can view balance")
     adapter = comm.get_adapter()
     try:

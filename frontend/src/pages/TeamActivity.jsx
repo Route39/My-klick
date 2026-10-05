@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PhoneCall, PhoneOutgoing, Users, Clock, MapPin } from "lucide-react";
+import { StickyNote, PhoneOff, PhoneOutgoing, Headset, Users, Truck, History, BadgeCheck, ThumbsUp, IndianRupee, MapPin } from "lucide-react";
 import api from "@/lib/api";
 import { Avatar } from "@/components/InitialsAvatar";
 import { ListSkeleton } from "@/components/Skeletons";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import Others from "@/pages/Others";
 
 const PERIODS = [
   { key: "today", label: "Today" },
@@ -17,31 +19,23 @@ const PERIODS = [
 
 const LOCATIONS = ["All", "Bangalore", "Coimbatore", "Chennai", "Tirupur"];
 
-function fmtTalk(sec) {
-  const s = Number(sec) || 0;
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h) return `${h}h ${m}m`;
-  if (m) return `${m}m ${s % 60}s`;
-  return `${s}s`;
-}
+const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+
+const METRICS = [
+  { key: "total_calls", label: "Total Calls", icon: PhoneOutgoing },
+  { key: "tele_call", label: "Tele Call", icon: Headset },
+  { key: "spoke_investor", label: "Spoked Investor", icon: Users },
+  { key: "spoke_driver", label: "Spoked Driver", icon: Truck },
+  { key: "rnr", label: "RNR", icon: PhoneOff },
+  { key: "prev_followup", label: "Previous Follow-up", icon: History },
+  { key: "conv_investor", label: "Conversion Investor", icon: BadgeCheck, accent: true },
+  { key: "interested_driver", label: "Interested Driver", icon: ThumbsUp },
+  { key: "payment", label: "Payment", icon: IndianRupee, accent: true, fmt: inr },
+];
 
 function fmtDate(d) {
   if (!d) return "";
   return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function Tile({ icon: Icon, label, value, accent }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-        <Icon className="h-4 w-4" /> {label}
-      </div>
-      <div className={cn("mt-2 font-display text-2xl font-extrabold", accent ? "text-emerald-600" : "text-slate-900")}>
-        {value}
-      </div>
-    </div>
-  );
 }
 
 export default function TeamActivity() {
@@ -50,6 +44,7 @@ export default function TeamActivity() {
   const [start, setStart] = useState(today);
   const [end, setEnd] = useState(today);
   const [location, setLocation] = useState("All");
+  const [othersOpen, setOthersOpen] = useState(false);
 
   const params = period === "custom" ? { period, start, end } : { period };
   const { data, isLoading, isError, error } = useQuery({
@@ -59,32 +54,35 @@ export default function TeamActivity() {
   });
 
   const rows = (data?.rows || []).filter(r => location === "All" || r.location === location);
-  const totals = rows.reduce((t, r) => ({
-    dialed: t.dialed + r.dialed, connected: t.connected + r.connected,
-    leads_spoken: t.leads_spoken + r.leads_spoken, talk_seconds: t.talk_seconds + r.talk_seconds,
-  }), { dialed: 0, connected: 0, leads_spoken: 0, talk_seconds: 0 });
+  const totals = METRICS.reduce((t, m) => ({ ...t, [m.key]: rows.reduce((a, r) => a + (r[m.key] || 0), 0) }), {});
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Team Activity</h1>
-          <p className="mt-1 text-slate-500">
-            How many leads each member spoke to
+          <p className="mt-1 text-slate-600">
+            Daily performance of each team member
             {data?.from && <> · {fmtDate(data.from)}{data.to !== data.from && <> – {fmtDate(data.to)}</>}</>}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button type="button" data-testid="team-others-btn" onClick={() => setOthersOpen(true)}
+          className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95">
+          <StickyNote className="h-4 w-4" /> Other Work
+        </button>
         <select value={location} onChange={e => setLocation(e.target.value)}
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900">
+          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
           {LOCATIONS.map(l => <option key={l} value={l}>{l === "All" ? "All locations" : l}</option>)}
         </select>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         {PERIODS.map(p => (
           <button key={p.key} type="button" onClick={() => setPeriod(p.key)}
             className={cn("rounded-xl px-4 py-2 text-sm font-semibold transition-all",
-              period === p.key ? "bg-primary text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50")}>
+              period === p.key ? "bg-primary text-white shadow-sm" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50")}>
             {p.label}
           </button>
         ))}
@@ -97,11 +95,17 @@ export default function TeamActivity() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile icon={PhoneOutgoing} label="Calls dialed" value={totals.dialed} />
-        <Tile icon={PhoneCall} label="Connected" value={totals.connected} accent />
-        <Tile icon={Users} label="Leads spoken" value={totals.leads_spoken} accent />
-        <Tile icon={Clock} label="Talk time" value={fmtTalk(totals.talk_seconds)} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        {METRICS.map(m => (
+          <div key={m.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <m.icon className="h-4 w-4" /> {m.label}
+            </div>
+            <div className={cn("mt-2 font-display text-2xl font-extrabold", m.accent ? "text-emerald-600" : "text-slate-900")}>
+              {m.fmt ? m.fmt(totals[m.key]) : totals[m.key]}
+            </div>
+          </div>
+        ))}
       </div>
 
       {isLoading ? <ListSkeleton count={5} /> : isError ? (
@@ -110,31 +114,31 @@ export default function TeamActivity() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[1150px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: 44 }} />
+              <col style={{ width: 210 }} />
+              {METRICS.map(m => <col key={m.key} />)}
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Member</th>
-                <th className="px-4 py-3 text-right">Dialed</th>
-                <th className="px-4 py-3 text-right">Connected</th>
-                <th className="px-4 py-3 text-right">Leads called</th>
-                <th className="px-4 py-3 text-right">Leads spoken</th>
-                <th className="px-4 py-3 text-right">Talk time</th>
-                <th className="px-4 py-3 text-right">Connect %</th>
+                <th className="px-3 py-3 align-middle">#</th>
+                <th className="px-3 py-3 align-middle">Member</th>
+                {METRICS.map(m => <th key={m.key} className="px-2 py-3 text-center align-middle leading-tight">{m.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-600">No members found</td></tr>
+                <tr><td colSpan={METRICS.length + 2} className="px-4 py-10 text-center text-slate-600">No members found</td></tr>
               )}
               {rows.map((r, i) => (
-                <tr key={r.id} className={cn("border-b border-slate-50 last:border-0")}>
-                  <td className="px-4 py-3 font-semibold text-slate-600">{i + 1}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
+                <tr key={r.id} className="border-b border-slate-50 last:border-0">
+                  <td className="px-3 py-3 font-semibold text-slate-600 tabular-nums">{i + 1}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <Avatar name={r.name} size={34} />
-                      <div>
-                        <div className="font-semibold text-slate-900">{r.name}</div>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-900" title={r.name}>{r.name}</div>
                         <div className="flex items-center gap-2 text-xs capitalize text-slate-600">
                           {(r.role || "").replace("_", " ")}
                           {r.location && <span className="flex items-center gap-0.5"><MapPin className="h-3 w-3" />{r.location}</span>}
@@ -142,18 +146,24 @@ export default function TeamActivity() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{r.dialed}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{r.connected}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{r.leads_called}</td>
-                  <td className="px-4 py-3 text-right font-bold text-emerald-600">{r.leads_spoken}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{fmtTalk(r.talk_seconds)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{r.connect_rate}%</td>
+                  {METRICS.map(m => (
+                    <td key={m.key} className={cn("px-2 py-3 text-center font-semibold tabular-nums", m.accent ? "text-emerald-600" : "text-slate-900")}>
+                      {m.fmt ? m.fmt(r[m.key]) : r[m.key]}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <Dialog open={othersOpen} onOpenChange={setOthersOpen}>
+        <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto rounded-3xl sm:max-w-3xl">
+          <DialogTitle className="sr-only">Other Work</DialogTitle>
+          <Others embedded />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

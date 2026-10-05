@@ -20,6 +20,7 @@ import DriverCustomers from "./pages/drivers/DriverCustomers";
 
 import CustomerDetail from "@/pages/CustomerDetail";
 import TeamActivity from "@/pages/TeamActivity";
+import Others from "@/pages/Others";
 import Team from "@/pages/Team";
 import CallLogs from "@/pages/CallLogs";
 import "@/App.css";
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/customers/:id" element={<CustomerDetail segment="investor" />} />
             <Route path="/team" element={<Team />} />
             <Route path="/team/activity" element={<TeamActivity />} />
+            <Route path="/others" element={<Others />} />
             <Route path="/calls" element={<CallLogs segment="investor" />} />
 
             {/* Driver Routes */}

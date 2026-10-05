@@ -27,7 +27,7 @@ import { useEffect } from "react";
 
 export default function CallLogs({ segment = '' }) {
   const { user } = useAuth();
-  const isManager = ["admin", "team_leader"].includes(user?.role);
+  const isManager = ["admin", "team_leader", "admin_staff"].includes(user?.role);
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { startManualCall, connecting } = useCall();

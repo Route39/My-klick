@@ -11,7 +11,7 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
-import { Settings } from "lucide-react";
+import { Settings, StickyNote } from "lucide-react";
 import { Avatar } from "@/components/InitialsAvatar";
 import { cn } from "@/lib/utils";
 
@@ -105,8 +105,8 @@ export default function AppShell() {
               </NavLink>
             ))}
 
-            {/* STAFF — managers only */}
-            {isManager && (
+            {/* STAFF — admin, team leader, admin+staff */}
+            {["admin", "team_leader", "admin_staff"].includes(user?.role) && (
               <>
                 <div className="px-3 pb-2 pt-6">
                   <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">STAFF</span>
@@ -179,6 +179,12 @@ export default function AppShell() {
               className="ml-auto flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95 lg:ml-3">
               <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{currentSegment === "driver" ? "Driver" : "Lead"}</span>
             </button>
+            {!["admin", "team_leader", "admin_staff"].includes(user?.role) && (
+              <button data-testid="others-btn" onClick={() => navigate("/others")}
+                className="ml-2 flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95">
+                <StickyNote className="h-4 w-4" /> <span className="hidden sm:inline">Other Work</span>
+              </button>
+            )}
           </header>
 
           <main className="px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">

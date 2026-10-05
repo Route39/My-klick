@@ -13,7 +13,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
   const queryClient = useQueryClient();
   
   const [formData, setFormData] = useState({
-    name: "",
+    name: "", remarks: "",
     phone: "",
     location: "",
     rc: "yes",
@@ -29,7 +29,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
 
   useEffect(() => {
     if (open) {
-      setFormData({ name: "", phone: "", location: "", rc: "yes" });
+      setFormData({ name: "", remarks: "", phone: "", location: "", rc: "yes" });
       setFiles({ aadhaar: null, pan: null, license: null });
     }
   }, [open]);
@@ -135,6 +135,11 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
               <Label className="text-xs text-slate-500">Original License</Label>
               <Input type="file" className="rounded-xl text-xs" onChange={(e) => setFiles({ ...files, license: e.target.files[0] })} accept="image/*,.pdf" />
             </div>
+          </div>
+
+          <div className="space-y-1.5 pb-2">
+            <Label>Remarks</Label>
+            <textarea rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} placeholder="Any notes about this driver..." />
           </div>
 
           <Button data-testid="create-driver-submit" type="submit" disabled={isUploading || addLead.isPending}

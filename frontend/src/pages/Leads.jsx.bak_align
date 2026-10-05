@@ -212,9 +212,11 @@ function LeadList({ leads, segment }) {
             <Avatar name={l.assigned_name || "?"} size={22} ring={false} /> <span className="truncate">{l.assigned_name || "—"}</span>
           </div>
           <div className="hidden w-28 text-right font-display font-bold text-slate-900 sm:block">{l.value ? formatINR(l.value) : "—"}</div>
-          <div className="hidden w-28 shrink-0 items-center gap-1 text-xs font-medium text-amber-600 xl:flex">
-            {l.next_followup && (<><Clock className="h-3 w-3" /> {formatDay(l.next_followup)}</>)}
-          </div>
+          {l.next_followup && (
+            <div className="hidden w-28 items-center gap-1 text-xs font-medium text-amber-600 xl:flex">
+              <Clock className="h-3 w-3" /> {formatDay(l.next_followup)}
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <button data-testid={`row-call-${l.id}`} onClick={(e) => { e.stopPropagation(); startCall(l); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
