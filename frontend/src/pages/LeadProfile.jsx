@@ -211,7 +211,7 @@ function Overview({ lead }) {
   const rows = isDriver
     ? [
         ["Phone", lead.phone], ["Location", lead.location || "—"], 
-        ["RC Available?", (lead.rc || "—").toUpperCase()],
+        ["License Available?", (lead.rc || "—").toUpperCase()],
         ["Assigned to", lead.assigned_name || "Unassigned"], 
         ["Created", formatDay(lead.created_at)]
       ]

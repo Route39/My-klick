@@ -30,6 +30,8 @@ function AddTeamMemberModal({ onSuccess }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("sales");
+  const [location, setLocation] = useState("");
+  const [joiningDate, setJoiningDate] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const queryClient = useQueryClient();
@@ -44,6 +46,8 @@ function AddTeamMemberModal({ onSuccess }) {
       setEmail("");
       setPassword("");
       setRole("sales");
+      setLocation("");
+      setJoiningDate("");
       if (onSuccess) onSuccess();
     },
     onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Failed to add member"),
@@ -51,7 +55,8 @@ function AddTeamMemberModal({ onSuccess }) {
 
   const onSubmit = (e) => {
     e.preventDefault();
-    addMut.mutate({ name, phone, email, password, role });
+    if (!location) return toast.error("Please select a location");
+    addMut.mutate({ name, phone, email, password, role, location, joining_date: joiningDate });
   };
 
   return (
@@ -81,6 +86,26 @@ function AddTeamMemberModal({ onSuccess }) {
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email <span className="text-slate-400 font-normal">(Optional)</span></Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@company.com" className="rounded-xl border-slate-200" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
+                <Select value={location} onValueChange={setLocation}>
+                  <SelectTrigger className="rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-200">
+                    <SelectItem value="Bangalore" className="rounded-lg">Bangalore</SelectItem>
+                    <SelectItem value="Coimbatore" className="rounded-lg">Coimbatore</SelectItem>
+                    <SelectItem value="Chennai" className="rounded-lg">Chennai</SelectItem>
+                    <SelectItem value="Tirupur" className="rounded-lg">Tirupur</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Joining Date</Label>
+                <Input type="date" value={joiningDate} onChange={e => setJoiningDate(e.target.value)} className="rounded-xl border-slate-200" required />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

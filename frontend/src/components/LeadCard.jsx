@@ -148,7 +148,7 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
           (lead.location || lead.rc) && (
             <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-slate-500">
               {lead.location && <div><span className="font-medium text-slate-700">Location:</span> {lead.location}</div>}
-              {lead.rc && <div><span className="font-medium text-slate-700">RC Available:</span> {lead.rc.toUpperCase()}</div>}
+              {lead.rc && <div><span className="font-medium text-slate-700">License Available:</span> {lead.rc.toUpperCase()}</div>}
             </div>
           )
         ) : (

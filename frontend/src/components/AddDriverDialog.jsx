@@ -108,7 +108,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
           
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2 pt-1">
-              <Label>RC Available?</Label>
+              <Label>License Available?</Label>
               <RadioGroup value={formData.rc} onValueChange={(v) => setFormData({ ...formData, rc: v })} className="flex gap-4 mt-1">
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="yes" id="rc-yes" />

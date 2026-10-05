@@ -111,12 +111,19 @@ export default function AppShell() {
                 <div className="px-3 pb-2 pt-6">
                   <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">STAFF</span>
                 </div>
-                <NavLink to="/team" data-testid="nav-team"
+                <NavLink to="/team" end data-testid="nav-team"
                   className={({ isActive }) => cn(
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
                     isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   )}>
                   <BarChart3 className="h-[18px] w-[18px]" /> Team
+                </NavLink>
+                <NavLink to="/team/activity" data-testid="nav-team-activity"
+                  className={({ isActive }) => cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                    isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  )}>
+                  <Phone className="h-[18px] w-[18px]" /> Team Activity
                 </NavLink>
               </>
             )}

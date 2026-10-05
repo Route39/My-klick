@@ -169,6 +169,8 @@ class TeamMemberIn(BaseModel):
     phone: str = ""
     password: str = ""
     role: str = "sales"
+    location: str = ""
+    joining_date: str = ""
 
 class RegisterIn(BaseModel):
     name: str
@@ -315,6 +317,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
         "password_hash": hash_password(body.password or "password123"),
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales",
         "organization_id": org_of(user), "avatar": None, "created_at": now_iso(),
+        "location": body.location, "joining_date": body.joining_date,
     }
     await db.users.insert_one(dict(doc))
     return clean(doc)
@@ -346,6 +349,75 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         {"$set": update_data}
     )
     return {"ok": True}
+
+@api.get("/team/activity")
+async def team_activity(period: str = "today", start: str = "", end: str = "",
+                        user: dict = Depends(get_current_user)):
+    """Per-member call activity for a date range (IST). Managers only."""
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    IST = timezone(timedelta(hours=5, minutes=30))
+    today = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+    one_day = timedelta(days=1)
+    try:
+        if period == "custom" and start:
+            s = datetime.fromisoformat(start[:10]).replace(tzinfo=IST)
+            e = (datetime.fromisoformat(end[:10]).replace(tzinfo=IST) if end else s) + one_day
+        elif period == "yesterday":
+            s, e = today - one_day, today
+        elif period == "week":
+            s, e = today - timedelta(days=today.weekday()), today + one_day
+        elif period == "month":
+            s, e = today.replace(day=1), today + one_day
+        else:
+            s, e = today, today + one_day
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if e <= s:
+        raise HTTPException(status_code=400, detail="End date must be after start date")
+    s_iso = s.astimezone(timezone.utc).isoformat()
+    e_iso = e.astimezone(timezone.utc).isoformat()
+
+    org = org_of(user)
+    users = await db.users.find({"organization_id": org}).to_list(500)
+    calls = await db.calls.find({
+        "organization_id": org, "user_id": {"$ne": None},
+        "created_at": {"$gte": s_iso, "$lt": e_iso},
+    }).to_list(50000)
+
+    connected_states = getattr(comm, "CONNECTED_STATES", {"answered", "completed", "connected"})
+    stats = {}
+    for c in calls:
+        st = stats.setdefault(c["user_id"], {"dialed": 0, "connected": 0, "talk_seconds": 0,
+                                             "leads": set(), "leads_spoken": set()})
+        st["dialed"] += 1
+        dur = int(c.get("duration_seconds") or 0)
+        if c.get("lead_id"):
+            st["leads"].add(c["lead_id"])
+        if c.get("status") in connected_states or dur > 0:
+            st["connected"] += 1
+            st["talk_seconds"] += dur
+            if c.get("lead_id"):
+                st["leads_spoken"].add(c["lead_id"])
+
+    rows = []
+    for u in users:
+        uid = u.get("id")
+        st = stats.get(uid, {"dialed": 0, "connected": 0, "talk_seconds": 0,
+                             "leads": set(), "leads_spoken": set()})
+        rows.append({
+            "id": uid, "name": u.get("name", ""), "role": u.get("role", ""),
+            "location": u.get("location", ""),
+            "dialed": st["dialed"], "connected": st["connected"],
+            "leads_called": len(st["leads"]), "leads_spoken": len(st["leads_spoken"]),
+            "talk_seconds": st["talk_seconds"],
+            "connect_rate": round(st["connected"] * 100 / st["dialed"]) if st["dialed"] else 0,
+        })
+    rows.sort(key=lambda r: (r["leads_spoken"], r["connected"], r["dialed"]), reverse=True)
+    keys = ("dialed", "connected", "leads_called", "leads_spoken", "talk_seconds")
+    totals = {k: sum(r[k] for r in rows) for k in keys}
+    return {"from": s.date().isoformat(), "to": (e - one_day).date().isoformat(),
+            "rows": rows, "totals": totals}
 
 @api.get("/team")
 async def team_performance(user: dict = Depends(get_current_user)):

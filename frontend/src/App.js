@@ -19,6 +19,7 @@ import DriverFollowUps from "./pages/drivers/DriverFollowUps";
 import DriverCustomers from "./pages/drivers/DriverCustomers";
 
 import CustomerDetail from "@/pages/CustomerDetail";
+import TeamActivity from "@/pages/TeamActivity";
 import Team from "@/pages/Team";
 import CallLogs from "@/pages/CallLogs";
 import "@/App.css";
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/customers" element={<Customers segment="investor" />} />
             <Route path="/customers/:id" element={<CustomerDetail segment="investor" />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/team/activity" element={<TeamActivity />} />
             <Route path="/calls" element={<CallLogs segment="investor" />} />
 
             {/* Driver Routes */}
