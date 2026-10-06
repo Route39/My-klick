@@ -179,23 +179,88 @@ class ExotelAdapter:
             data = r.json()
             return data.get("Account", {}).get("BalanceData", {})
 
-    async def send_whatsapp(self, from_number, to_number, text):
-        payload = {"from": self.wa_number, "to": to_number,
-                   "content": {"recipient_type": "individual", "type": "text", "text": {"body": text}}}
+    async def send_whatsapp(self, from_number, to_number, text, media=None):
+        d = "".join(c for c in str(to_number or "") if c.isdigit())
+        to = "91" + d if len(d) == 10 else d
+        if media and media.get("url"):
+            mt = media.get("type") or "document"
+            obj = {"link": media["url"]}
+            if text and mt in ("image", "video", "document"):
+                obj["caption"] = text
+            if mt == "document" and media.get("filename"):
+                obj["filename"] = media["filename"]
+            content = {"recipient_type": "individual", "type": mt, mt: obj}
+        else:
+            content = {"recipient_type": "individual", "type": "text", "text": {"body": text}}
+        msg = {"from": self.wa_number, "to": to, "content": content}
         if self.callback:
-            payload["status_callback"] = self.callback + "/api/webhooks/exotel/whatsapp"
+            msg["status_callback"] = self.callback + "/api/webhooks/exotel/whatsapp"
         async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.post(f"{self.wa_base}/v2/accounts/{self.sid}/messages", auth=(self.key, self.token), json=payload)
-            if r.status_code >= 400:
-                raise CommunicationError(f"Exotel WhatsApp error {r.status_code}")
+            r = await c.post(f"{self.wa_base}/v2/accounts/{self.sid}/messages",
+                             auth=(self.key, self.token), json={"whatsapp": {"messages": [msg]}})
+        try:
             data = r.json()
-            wa = data.get("whatsapp", data)
-            mid = wa.get("message_id") or wa.get("id") or data.get("request_id")
-            return {"provider_message_id": mid, "status": "sent", "raw": data}
+        except ValueError:
+            data = {"raw": r.text[:300]}
+        items = ((data.get("response") or {}).get("whatsapp") or {}).get("messages") or [{}]
+        first = items[0] or {}
+        if r.status_code >= 400 or first.get("status") == "failure":
+            err = (first.get("error_data") or {}).get("description") or r.status_code
+            logger.warning("Exotel WhatsApp failed: %s", err)
+            raise CommunicationError(f"Exotel WhatsApp error: {err}")
+        mid = (first.get("data") or {}).get("sid") or data.get("request_id")
+        return {"provider_message_id": mid, "status": "sent", "raw": data}
+
+
+class WABridgeAdapter:
+    provider = "wabridge"
+
+    def __init__(self):
+        self.base = os.environ.get("WABRIDGE_BASE", "https://web.wabridge.com/api").rstrip("/")
+        self.app_key = os.environ.get("WABRIDGE_APP_KEY", "")
+        self.auth_key = os.environ.get("WABRIDGE_AUTH_KEY", "")
+        self.device_id = os.environ.get("WABRIDGE_DEVICE_ID", "")
+
+    @staticmethod
+    def _num(n):
+        d = "".join(ch for ch in str(n or "") if ch.isdigit())
+        return "91" + d if len(d) == 10 else d
+
+    async def _post(self, path, payload):
+        body = {"app-key": self.app_key, "auth-key": self.auth_key, "device_id": self.device_id, **payload}
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.post(f"{self.base}/{path}", json=body)
+        try:
+            data = r.json()
+        except ValueError:
+            data = {"message": r.text[:200]}
+        if r.status_code >= 400 or not data.get("status"):
+            logger.warning("WABridge %s failed: %s %s", path, r.status_code, data.get("message"))
+            raise CommunicationError(f"WABridge error: {data.get('message') or r.status_code}")
+        return data
+
+    async def send_whatsapp(self, from_number, to_number, text):
+        data = await self._post("createtextmessage", {"destination_number": self._num(to_number), "message": text})
+        return {"provider_message_id": (data.get("data") or {}).get("messageid"), "status": "sent", "raw": data}
+
+    async def send_template(self, to_number, template_id, variables=None, button_variables=None, media=""):
+        data = await self._post("createmessage", {
+            "destination_number": self._num(to_number), "template_id": str(template_id),
+            "variables": variables or [], "button_variable": button_variables or [],
+            "media": media, "message": "",
+        })
+        return {"provider_message_id": (data.get("data") or {}).get("messageid"), "status": "sent", "raw": data}
 
 
 def get_adapter():
     return ExotelAdapter() if provider_name() == "exotel" else MockAdapter()
+
+
+def get_whatsapp_adapter():
+    p = os.environ.get("WHATSAPP_PROVIDER", provider_name()).lower()
+    if p == "wabridge":
+        return WABridgeAdapter()
+    return ExotelAdapter() if p == "exotel" else MockAdapter()
 
 
 def verify_webhook_signature(body: bytes, signature_header: str) -> bool:

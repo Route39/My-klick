@@ -9,6 +9,7 @@ import {
   Repeat, UserPlus, PartyPopper, PhoneCall, Check, CheckCheck, Trophy, Play,
 } from "lucide-react";
 import api from "@/lib/api";
+import { Paperclip as WaClip, FileText as WaFile, FileText } from "lucide-react";
 import { useCall } from "@/context/CallContext";
 import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
@@ -165,7 +166,7 @@ export default function LeadProfile({ segment = "" }) {
       </motion.div>
 
       {/* Tabs */}
-      <Tabs defaultValue={params.get("tab") || "overview"}>
+      <Tabs key={params.get("tab") || "overview"} defaultValue={params.get("tab") || "overview"}>
         <TabsList className="rounded-xl bg-slate-100 p-1">
           <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
           <TabsTrigger value="timeline" data-testid="tab-timeline">Timeline</TabsTrigger>
@@ -300,13 +301,42 @@ function WhatsApp({ id, lead }) {
   const qc = useQueryClient();
   const [text, setText] = useState("");
   const endRef = useRef();
-  const { data = [] } = useQuery({ queryKey: ["messages", id], queryFn: async () => (await api.get(`/leads/${id}/messages`)).data });
+  const fileRef = useRef();
+  const [uploading, setUploading] = useState(false);
+  const fileBase = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
+  const fileUrl = (u) => (u && u.startsWith("/") ? fileBase + u : u);
+  const sendFile = async (file) => {
+    if (!file) return;
+    if (file.size > 16 * 1024 * 1024) { toast.error("File too large (max 16 MB)"); return; }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data: up } = await api.post("/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const mt = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "document";
+      await api.post(`/leads/${id}/whatsapp`, { text: text.trim(), media_url: up.url, media_type: mt, filename: file.name });
+      setText("");
+      qc.invalidateQueries({ queryKey: ["messages", id] });
+      toast.success("File sent ✓");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "File could not be sent");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+  const { data = [] } = useQuery({ queryKey: ["messages", id], queryFn: async () => (await api.get(`/leads/${id}/messages`)).data, refetchInterval: 3000 });
   const send = useMutation({
     mutationFn: async (t) => (await api.post(`/leads/${id}/whatsapp`, { text: t })).data,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["messages", id] }); toast.success("WhatsApp sent ✓"); setText(""); },
     onError: () => toast.error("Message could not be sent. Please try again."),
   });
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [data.length]);
+  const [, setNow] = useState(0);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
+  const lastIn = [...data].reverse().find((m) => m.direction === "incoming");
+  const leftMs = lastIn ? new Date(lastIn.created_at).getTime() + 86400000 - Date.now() : -1;
+  const leftTxt = leftMs > 0 ? `${Math.floor(leftMs / 3600000)}h ${Math.floor((leftMs % 3600000) / 60000)}m` : null;
 
   return (
     <Panel className="p-0">
@@ -321,6 +351,16 @@ function WhatsApp({ id, lead }) {
             className={cn("flex", m.direction === "outgoing" ? "justify-end" : "justify-start")}>
             <div className={cn("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
               m.direction === "outgoing" ? "rounded-br-sm bg-emerald-500 text-white" : "rounded-bl-sm bg-white text-slate-800")}>
+              {m.media_url && (m.type === "image" || m.type === "sticker"
+                ? <a href={fileUrl(m.media_url)} target="_blank" rel="noreferrer"><img src={fileUrl(m.media_url)} alt="" className="mb-1 max-h-60 rounded-lg" /></a>
+                : m.type === "video"
+                ? <video src={fileUrl(m.media_url)} controls className="mb-1 max-h-60 rounded-lg" />
+                : m.type === "audio" || m.type === "voice"
+                ? <audio src={fileUrl(m.media_url)} controls className="mb-1 max-w-[240px]" />
+                : <a href={fileUrl(m.media_url)} target="_blank" rel="noreferrer"
+                    className={cn("mb-1 flex items-center gap-2 rounded-lg px-2 py-1.5 underline", m.direction === "outgoing" ? "bg-white/15" : "bg-slate-100")}>
+                    <WaFile className="h-4 w-4 shrink-0" />{m.filename || "File"}
+                  </a>)}
               {m.text}
               <div className={cn("mt-0.5 flex items-center justify-end gap-1 text-[10px]", m.direction === "outgoing" ? "text-white/70" : "text-slate-400")}>
                 {formatClock(m.created_at)}
@@ -333,6 +373,13 @@ function WhatsApp({ id, lead }) {
       </div>
       <form className="flex items-center gap-2 border-t border-slate-100 p-3"
         onSubmit={(e) => { e.preventDefault(); if (text.trim()) send.mutate(text.trim()); }}>
+        <input ref={fileRef} type="file" hidden
+          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,video/mp4,audio/*"
+          onChange={(e) => sendFile(e.target.files?.[0])} />
+        <button type="button" title="Attach file" disabled={uploading} onClick={() => fileRef.current?.click()}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 disabled:opacity-50">
+          {uploading ? <span className="text-xs">…</span> : <WaClip className="h-5 w-5" />}
+        </button>
         <input data-testid="whatsapp-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a message…"
           className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
         <button data-testid="whatsapp-send" type="submit" className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 active:scale-90"><Send className="h-4 w-4" /></button>

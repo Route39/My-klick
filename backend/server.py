@@ -1286,7 +1286,10 @@ async def webhook_whatsapp(request: Request):
                 await db.messages.update_one({"provider_message_id": msg_id}, {"$set": {"status": status}})
             continue
 
+        print("WA RAW:", d)
         from_num = d.get("from") or ""
+        if len(norm_phone(str(from_num))) < 10:  # skip payloads without a sender (tests / pings)
+            continue
         content = d.get("content") or d.get("message") or {}
         mtype = content.get("type") or "text"
         txt = content.get("text")
@@ -1461,24 +1464,89 @@ async def _exo_sync_loop():
         await asyncio.sleep(60)
 
 @api.get("/exophones/calls")
-async def exophones_calls(q: str = "", direction: str = "", limit: int = 200, user: dict = Depends(get_current_user)):
+async def exophones_calls(q: str = "", direction: str = "", limit: int = 25, skip: int = 0, user: dict = Depends(get_current_user)):
     f = {}
     if direction in ("incoming", "outgoing"):
         f["direction"] = direction
     if q:
         rx = {"$regex": q.strip(), "$options": "i"}
         f["$or"] = [{"from_number": rx}, {"to_number": rx}, {"lead_name": rx}, {"sid": rx}, {"caller_name": rx}]
-    rows = await db.exo_calls.find(f, {"_id": 0}).sort("start_time", -1).to_list(min(limit, 1000))
+    total = await db.exo_calls.count_documents(f)
+    rows = await db.exo_calls.find(f, {"_id": 0}).sort("start_time", -1).skip(max(skip, 0)).limit(min(limit, 1000)).to_list(min(limit, 1000))
     last = await db.exo_calls.find_one({}, {"_id": 0, "synced_at": 1}, sort=[("synced_at", -1)])
-    return {"items": rows, "last_sync": (last or {}).get("synced_at")}
+    # Who owns each lead now (name + location) -> row shows as taken
+    lids = list({r["lead_id"] for r in rows if r.get("lead_id")})
+    leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": lids}}, {"_id": 0, "id": 1, "assigned_to": 1, "assigned_name": 1}).to_list(2000)}
+    uids = list({l["assigned_to"] for l in leads.values() if l.get("assigned_to")} | {r["claimed_by"] for r in rows if r.get("claimed_by")})
+    users = {u["id"]: u for u in await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "location": 1}).to_list(500)}
+    is_admin = user.get("role") == "admin"
+    for r in rows:
+        owner = (leads.get(r.get("lead_id")) or {}).get("assigned_to") or r.get("claimed_by")
+        u = users.get(owner) if owner else None
+        r["claimed_by"] = owner or None
+        r["claimed_name"] = (u or {}).get("name") or r.get("claimed_name")
+        r["claimed_location"] = (u or {}).get("location") or r.get("claimed_location") or ""
+        if not is_admin:
+            for k in ("recording_url", "duration", "talk_time"):
+                r.pop(k, None)
+    return {"items": rows, "last_sync": (last or {}).get("synced_at"), "is_admin": is_admin, "total": total}
 
 @api.post("/exophones/sync")
 async def exophones_sync(user: dict = Depends(get_current_user)):
     return await exo_sync_calls(pages=3)
 
+@api.post("/exophones/calls/{sid}/claim")
+async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depends(get_current_user)):
+    """Assign to me: first staff to click gets the caller's lead (created if new)."""
+    call = await db.exo_calls.find_one_and_update(
+        {"sid": sid, "claimed_by": None},
+        {"$set": {"claimed_by": user["id"], "claimed_name": user.get("name", ""),
+                  "claimed_location": user.get("location", ""), "claimed_at": now_iso()}},
+        return_document=True)
+    if not call:
+        row = await db.exo_calls.find_one({"sid": sid}, {"_id": 0, "claimed_name": 1})
+        if not row:
+            raise HTTPException(status_code=404, detail="Call not found")
+        raise HTTPException(status_code=409, detail=f"Already taken by {row.get('claimed_name') or 'someone'}")
+    customer = call.get("from_number") if call.get("direction") == "incoming" else call.get("to_number")
+    c10 = norm_phone(customer or "")
+    org = org_of(user)
+    lead = await find_lead_by_phone(customer or "", org)
+    if lead and lead.get("assigned_to") and lead["assigned_to"] != user["id"]:
+        owner = await db.users.find_one({"id": lead["assigned_to"]}, {"_id": 0, "name": 1, "location": 1}) or {}
+        await db.exo_calls.update_one({"sid": sid}, {"$set": {"claimed_by": lead["assigned_to"],
+            "claimed_name": owner.get("name") or lead.get("assigned_name"), "claimed_location": owner.get("location", ""),
+            "lead_id": lead["id"], "lead_name": lead.get("name")}})
+        raise HTTPException(status_code=409, detail=f"Lead already assigned to {owner.get('name') or lead.get('assigned_name')}")
+    seg = "driver" if segment == "driver" else "investor"
+    if lead:
+        await db.leads.update_one({"id": lead["id"]}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
+                                  "is_common": False, "claimed_at": now_iso(), "updated_at": now_iso()}})
+        await db.followups.update_many({"lead_id": lead["id"], "assigned_to": None},
+                                       {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", "")}})
+    else:
+        lead = {
+            "id": str(uuid.uuid4()), "organization_id": org,
+            "name": call.get("caller_name") or customer, "company": "", "phone": customer, "phone_norm": c10, "whatsapp": customer,
+            "email": "", "location": "", "product": "", "source": "exotel_call", "status": "new", "priority": "medium",
+            "segment": seg, "is_common": False, "assigned_to": user["id"], "assigned_name": user.get("name", ""),
+            "value": 0, "notes": "", "next_followup": None, "remarks": "From ExoPhones call",
+            "created_by": user["id"], "created_by_name": user.get("name", ""),
+            "created_at": now_iso(), "updated_at": now_iso(),
+        }
+        await db.leads.insert_one(dict(lead))
+    await log_activity("lead_claimed", lead, user, "assigned an ExoPhones caller to themselves")
+    if len(c10) == 10:
+        rx = {"$regex": c10 + "$"}
+        await db.exo_calls.update_many({"$or": [{"direction": "incoming", "from_number": rx}, {"direction": "outgoing", "to_number": rx}]},
+                                       {"$set": {"lead_id": lead["id"], "lead_name": lead.get("name"), "lead_segment": lead.get("segment", seg)}})
+    return {"ok": True, "lead_id": lead["id"], "claimed_name": user.get("name", ""), "claimed_location": user.get("location", "")}
+
 @api.get("/exophones/recording/{sid}")
 async def exophones_recording(sid: str, user: dict = Depends(get_current_user)):
     import httpx
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can play recordings")
     row = await db.exo_calls.find_one({"sid": sid})
     if not row or not row.get("recording_url"):
         raise HTTPException(status_code=404, detail="No recording")
