@@ -5,6 +5,7 @@ import {
   Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox,
 } from "lucide-react";
 import { CommonLeadsNotifier } from "@/components/CommonLeadsNotifier";
+import { WhatsAppNotifier } from "@/components/WhatsAppNotifier";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -20,6 +21,7 @@ const NAV = [
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/common-leads", label: "Common Leads", icon: Inbox },
   { to: "/calls", label: "RouteCall Logs", icon: Phone },
+  { to: "/exophones", label: "ExoPhones", icon: Phone },
   { to: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/followups", label: "Follow-ups", icon: CalendarClock },
   { to: "/customers", label: "Customers", icon: UserCheck },
@@ -30,6 +32,7 @@ const DRIVER_NAV = [
   { to: "/drivers/leads", label: "Drivers", icon: Users },
   { to: "/drivers/common-leads", label: "Common Leads", icon: Inbox },
   { to: "/drivers/calls", label: "RouteCall Logs", icon: Phone },
+  { to: "/drivers/exophones", label: "ExoPhones", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
   { to: "/drivers/customers", label: "Converted Drivers", icon: UserCheck },
@@ -61,6 +64,7 @@ export default function AppShell() {
 
   return (
     <CallProvider>
+      <WhatsAppNotifier />
       <CommonLeadsNotifier />
       <div className="min-h-screen bg-background">
         {/* ── Sidebar (desktop only) ── */}

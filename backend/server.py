@@ -29,7 +29,7 @@ import communication as comm
 # ---------------------------------------------------------------------------
 mongo_url = os.environ['MONGO_URL']
 import certifi
-client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where())
+client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where(), maxIdleTimeMS=60000, retryReads=True, retryWrites=True)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="MyKlick CRM")
@@ -234,8 +234,11 @@ class LegacyCallIn(BaseModel):
     duration_seconds: int = 0
 
 class MessageIn(BaseModel):
-    text: str
+    text: str = ""
     direction: str = "outgoing"
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+    filename: Optional[str] = None
 
 STATUSES = ["new", "contacted", "rnr", "interested", "follow_up", "converted", "lost"]
 
@@ -833,6 +836,48 @@ async def lead_messages(lead_id: str, user: dict = Depends(get_current_user)):
     await lead_or_403(lead_id, user)
     msgs = await db.messages.find({"lead_id": lead_id}).sort("created_at", 1).to_list(500)
     return [clean(m) for m in msgs]
+async def _wa_visible_lead_ids(user: dict, lead_ids: list) -> dict:
+    """Leads this user may see: managers see all, staff see own + unassigned/common."""
+    q = {"organization_id": org_of(user), "id": {"$in": lead_ids}}
+    if not is_manager(user):
+        q["$or"] = [{"assigned_to": user["id"]}, {"assigned_to": None}]
+    leads = await db.leads.find(q, {"_id": 0, "id": 1, "name": 1, "segment": 1}).to_list(1000)
+    return {l["id"]: l for l in leads}
+
+@api.get("/whatsapp/latest")
+async def whatsapp_latest(since: str, user: dict = Depends(get_current_user)):
+    msgs = await db.messages.find(
+        {"direction": "incoming", "created_at": {"$gt": since}, "lead_id": {"$ne": None}}
+    ).sort("created_at", 1).to_list(100)
+    visible = await _wa_visible_lead_ids(user, list({m["lead_id"] for m in msgs}))
+    out = []
+    for m in msgs:
+        l = visible.get(m["lead_id"])
+        if l:
+            out.append({"id": m["id"], "lead_id": m["lead_id"], "lead_name": l.get("name"),
+                        "segment": l.get("segment") or "investor", "text": (m.get("text") or "")[:120],
+                        "created_at": m.get("created_at")})
+    last = msgs[-1]["created_at"] if msgs else since
+    return {"items": out, "last": last}
+
+@api.get("/whatsapp/unread-count")
+async def whatsapp_unread_count(user: dict = Depends(get_current_user)):
+    msgs = await db.messages.find(
+        {"direction": "incoming", "read": False, "lead_id": {"$ne": None}}, {"_id": 0, "lead_id": 1}
+    ).to_list(5000)
+    visible = await _wa_visible_lead_ids(user, list({m["lead_id"] for m in msgs}))
+    by_lead = {}
+    for m in msgs:
+        if m["lead_id"] in visible:
+            by_lead[m["lead_id"]] = by_lead.get(m["lead_id"], 0) + 1
+    return {"total": sum(by_lead.values()), "by_lead": by_lead}
+
+@api.post("/leads/{lead_id}/messages/read")
+async def whatsapp_mark_read(lead_id: str, user: dict = Depends(get_current_user)):
+    await lead_or_403(lead_id, user)
+    r = await db.messages.update_many({"lead_id": lead_id, "direction": "incoming", "read": False},
+                                      {"$set": {"read": True}})
+    return {"ok": True, "updated": r.modified_count}
 
 @api.get("/leads/{lead_id}/calls")
 async def lead_calls(lead_id: str, user: dict = Depends(get_current_user)):
@@ -1016,12 +1061,26 @@ async def log_call(lead_id: str, body: LegacyCallIn, user: dict = Depends(get_cu
 @api.post("/leads/{lead_id}/whatsapp")
 async def send_whatsapp(lead_id: str, body: MessageIn, user: dict = Depends(get_current_user)):
     lead = await lead_or_403(lead_id, user)
-    adapter = comm.get_adapter()
+    adapter = comm.get_whatsapp_adapter()
+    if not (body.text or "").strip() and not body.media_url:
+        raise HTTPException(status_code=400, detail="Type a message or attach a file")
+    media = None
+    if body.media_url:
+        public = body.media_url
+        if public.startswith("/"):
+            base = os.environ.get("PUBLIC_API_BASE", "").rstrip("/")
+            if not base:
+                raise HTTPException(status_code=400, detail="PUBLIC_API_BASE is not set, files cannot be sent")
+            public = base + public
+        media = {"url": public, "type": body.media_type or "document", "filename": body.filename}
     try:
+        kwargs = {"media": media} if media else {}
         result = await adapter.send_whatsapp(
             from_number=os.environ.get("EXOTEL_WHATSAPP_NUMBER") or None,
-            to_number=lead.get("whatsapp") or lead["phone"], text=body.text,
+            to_number=lead.get("whatsapp") or lead["phone"], text=body.text, **kwargs,
         )
+    except TypeError:
+        raise HTTPException(status_code=400, detail="This WhatsApp provider cannot send files")
     except comm.CommunicationError:
         await log_integration("whatsapp_error", {"lead_id": lead_id, "provider": adapter.provider})
         raise HTTPException(status_code=502, detail="Message could not be sent. Please try again.")
@@ -1029,12 +1088,12 @@ async def send_whatsapp(lead_id: str, body: MessageIn, user: dict = Depends(get_
     msg = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user), "lead_id": lead_id,
         "provider": adapter.provider, "provider_message_id": result.get("provider_message_id"),
-        "direction": "outgoing", "type": "text", "text": body.text,
-        "status": result.get("status", "sent"), "media_url": None,
+        "direction": "outgoing", "type": (media or {}).get("type") or "text", "text": body.text,
+        "status": result.get("status", "sent"), "media_url": body.media_url, "filename": body.filename,
         "user_id": user["id"], "created_at": now_iso(),
     }
     await db.messages.insert_one(dict(msg))
-    await log_activity("whatsapp", lead, user, "sent a WhatsApp message", {"text": body.text[:60]})
+    await log_activity("whatsapp", lead, user, "sent a WhatsApp message", {"text": (body.text or body.filename or "[file]")[:60]})
     await log_integration("whatsapp_sent", {"lead_id": lead_id, "provider_message_id": msg["provider_message_id"], "provider": adapter.provider})
     return clean(msg)
 
@@ -1125,58 +1184,309 @@ async def webhook_call(request: Request):
             await db.calls.update_one({"id": call["id"]}, {"$set": {"activity_logged": True}})
     await log_integration("call_webhook", {"provider_call_id": call_id, "status": status})
     return {"ok": True}
+_WA_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf",
+           "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/aac": "aac", "audio/mp4": "m4a"}
+
+async def _wa_fetch_media(mobj: dict, mtype: str):
+    """Download an incoming WhatsApp file into /uploads; falls back to the remote URL."""
+    url = (mobj or {}).get("url") or (mobj or {}).get("link")
+    if not url:
+        return None
+    try:
+        import httpx
+        auth = None
+        if "exotel" in url:
+            auth = (os.environ.get("EXOTEL_API_KEY", ""), os.environ.get("EXOTEL_API_TOKEN", ""))
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+            r = await c.get(url, auth=auth)
+        if r.status_code >= 400:
+            return url
+        mime = (mobj.get("mime_type") or r.headers.get("content-type") or "").split(";")[0]
+        ext = _WA_EXT.get(mime) or (mobj.get("filename") or "").rsplit(".", 1)[-1].lower() or "bin"
+        os.makedirs("uploads", exist_ok=True)
+        name = f"wa_{uuid.uuid4().hex}.{ext[:5]}"
+        with open(os.path.join("uploads", name), "wb") as f:
+            f.write(r.content)
+        return f"/uploads/{name}"
+    except Exception:
+        return url
+
+@api.api_route("/webhooks/wabridge/lead", methods=["GET", "POST"])
+async def wabridge_bot_lead(request: Request, key: str = ""):
+    secret = os.environ.get("WABRIDGE_LEAD_KEY", "")
+    if secret and key != secret:
+        raise HTTPException(status_code=401, detail="Invalid key")
+    data = dict(request.query_params)
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                data.update(body)
+        except Exception:
+            try:
+                data.update(dict(await request.form()))
+            except Exception:
+                pass
+    pick = lambda *ks: next((str(data[k]).strip() for k in ks if data.get(k) not in (None, "")), "")
+    phone = norm_phone(pick("phone", "mobile", "number", "from", "wa_id", "customer_number"))
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone is required")
+    name = pick("name", "customer_name", "profile_name") or phone
+    choice = pick("segment", "interest", "option", "button", "choice").lower()
+    segment = "driver" if "driver" in choice else "investor"
+    note = pick("message", "text", "note") or choice
+    lead = await find_lead_by_phone(phone)
+    created = False
+    if not lead:
+        lead = {
+            "id": str(uuid.uuid4()), "organization_id": DEFAULT_ORG,
+            "name": name, "company": "", "phone": phone, "phone_norm": phone, "whatsapp": phone,
+            "email": "", "location": "", "product": "",
+            "source": "whatsapp", "status": "new", "priority": "medium",
+            "segment": segment, "is_common": True,
+            "assigned_to": None, "assigned_name": None,
+            "value": 0, "notes": "", "next_followup": None,
+            "remarks": f"WA Bot: {note}" if note else "WA Bot",
+            "created_by": None, "created_by_name": "WhatsApp Bot",
+            "created_at": now_iso(), "updated_at": now_iso(),
+        }
+        await db.leads.insert_one(dict(lead))
+        created = True
+    await log_activity("lead_created" if created else "whatsapp", lead, {"id": None, "name": "WhatsApp Bot"},
+                       "came from WhatsApp bot" if created else "selected an option in WhatsApp bot", {"text": note[:60]})
+    await log_integration("wabridge_bot_lead", {"lead_id": lead["id"], "created": created, "segment": segment})
+    return {"ok": True, "created": created, "lead_id": lead["id"]}
 
 @api.post("/webhooks/exotel/whatsapp")
 async def webhook_whatsapp(request: Request):
     body = await request.body()
     if not comm.verify_webhook_signature(body, request.headers.get("X-Exotel-Signature", "")):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
     if payload.get("type") == "verification":
         return {"challenge": payload.get("challenge")}
 
-    data = payload.get("data", payload.get("message", payload)) or {}
-    msg_id = data.get("message_sid") or data.get("message_id") or data.get("id")
-    if not msg_id:
-        raise HTTPException(status_code=400, detail="Missing message id")
-    event = payload.get("type", payload.get("event", "event"))
+    items = (payload.get("whatsapp") or {}).get("messages") or [payload.get("data", payload.get("message", payload)) or {}]
+    saved = 0
+    for d in items:
+        ctype = d.get("callback_type") or payload.get("type") or ""
+        msg_id = d.get("message_sid") or d.get("message_id") or d.get("id")
 
-    # Status update for an outbound message we already stored.
-    if event in ("message_status", "status") or data.get("status"):
-        status = comm.map_msg_status(data.get("status"))
-        fresh = await _once(f"wa:{msg_id}:{status}", payload)
-        if fresh:
-            await db.messages.update_one({"provider_message_id": msg_id}, {"$set": {"status": status}})
-        await log_integration("whatsapp_webhook", {"provider_message_id": msg_id, "status": status})
-        return {"ok": True} if fresh else {"ok": True, "duplicate": True}
+        if ctype == "dlr" or (ctype != "incoming_message" and d.get("status")):
+            raw = (d.get("exo_detailed_status") or d.get("status") or "").replace("EX_MESSAGE_", "").lower()
+            status = comm.map_msg_status(raw)
+            if msg_id and await _once(f"wa:{msg_id}:{status}", d):
+                await db.messages.update_one({"provider_message_id": msg_id}, {"$set": {"status": status}})
+            continue
 
-    # Inbound message.
-    if not await _once(f"wa-in:{msg_id}", payload):
-        return {"ok": True, "duplicate": True}
-    from_num = data.get("from") or ""
-    text = ""
-    m = data.get("message", {})
-    if isinstance(m, dict):
-        text = (m.get("text") or {}).get("body", "") if isinstance(m.get("text"), dict) else m.get("body", "")
-    lead = await find_lead_by_phone(from_num)
-    msg = {
-        "id": str(uuid.uuid4()), "organization_id": DEFAULT_ORG,
-        "lead_id": lead["id"] if lead else None,
-        "provider": "exotel", "provider_message_id": msg_id,
-        "direction": "incoming", "type": "text", "text": text,
-        "status": "delivered", "media_url": None, "from_number": from_num,
-        "created_at": now_iso(),
-    }
-    await db.messages.insert_one(dict(msg))
-    if lead:
-        await log_activity("whatsapp", lead, {"id": None, "name": "Lead"}, "sent an incoming WhatsApp message", {"text": text[:60]})
-    await log_integration("whatsapp_inbound", {"provider_message_id": msg_id, "matched": bool(lead)})
-    return {"ok": True}
+        from_num = d.get("from") or ""
+        content = d.get("content") or d.get("message") or {}
+        mtype = content.get("type") or "text"
+        txt = content.get("text")
+        text = ((txt or {}).get("body") if isinstance(txt, dict) else content.get("body")) \
+            or (content.get("button") or {}).get("text") \
+            or ((content.get("interactive") or {}).get("button_reply") or {}).get("title") \
+            or f"[{mtype}]"
+        media_url = None
+        mobj = content.get(mtype) if isinstance(content.get(mtype), dict) else {}
+        if mtype in ("image", "document", "video", "audio", "sticker", "voice"):
+            media_url = await _wa_fetch_media(mobj, mtype)
+            text = mobj.get("caption") or mobj.get("filename") or ""
+        key = msg_id or f"{from_num}:{d.get('timestamp')}:{text[:40]}"
+        if not await _once(f"wa-in:{key}", d):
+            continue
+
+        lead = await find_lead_by_phone(from_num)
+        if not lead:
+            ten = norm_phone(from_num)
+            lead = {
+                "id": str(uuid.uuid4()), "organization_id": DEFAULT_ORG,
+                "name": d.get("profile_name") or ten, "company": "",
+                "phone": ten, "phone_norm": ten, "whatsapp": ten,
+                "email": "", "location": "", "product": "",
+                "source": "whatsapp", "status": "new", "priority": "medium",
+                "segment": "driver" if any(w in (text or "").lower() for w in ("driver", "drive", "டிரைவர்", "ஓட்டுநர்")) else "investor", "is_common": True,
+                "assigned_to": None, "assigned_name": None,
+                "value": 0, "notes": "", "next_followup": None,
+                "created_by": None, "created_by_name": "WhatsApp",
+                "created_at": now_iso(), "updated_at": now_iso(),
+            }
+            await db.leads.insert_one(dict(lead))
+            await log_activity("lead_created", lead, {"id": None, "name": "WhatsApp"}, "created from incoming WhatsApp")
+
+        await db.messages.insert_one({
+            "id": str(uuid.uuid4()), "organization_id": lead.get("organization_id") or DEFAULT_ORG,
+            "lead_id": lead["id"], "provider": "exotel", "provider_message_id": msg_id,
+            "direction": "incoming", "type": mtype, "text": text,
+            "status": "delivered", "media_url": media_url, "filename": mobj.get("filename"), "from_number": from_num,
+            "read": False, "created_at": now_iso(),
+        })
+        await db.leads.update_one({"id": lead["id"]}, {"$set": {"last_inbound_at": now_iso(), "updated_at": now_iso()}})
+        await log_activity("whatsapp", lead, {"id": None, "name": lead.get("name") or "Lead"}, "sent an incoming WhatsApp message", {"text": (text or f"[{mtype}]")[:60]})
+        saved += 1
+
+    await log_integration("whatsapp_inbound", {"saved": saved})
+    return {"ok": True, "saved": saved}
 
 class ManualCallIn(BaseModel):
     from_number: str
     to_number: str
     segment: Optional[str] = None
+
+# ---------------------------------------------------------------------------
+# ExoPhones — mirror of the full Exotel call Inbox (same data for Investor + Driver)
+# ---------------------------------------------------------------------------
+_EXO_STATUS = {"completed": "Call was successful", "no-answer": "No user answered",
+               "busy": "Busy", "failed": "Call failed", "canceled": "Client hung-up before connecting"}
+
+def _exo_outcome(x: dict, direction: str):
+    """Same outcome labels as the Exotel Inbox, derived from leg statuses."""
+    d = x.get("Details") or {}
+    l1 = (d.get("Leg1Status") or "").lower()
+    l2 = (d.get("Leg2Status") or "").lower()
+    talk = int(d.get("ConversationDuration") or 0)
+    if l2 == "completed" and talk > 0:
+        return "success", "Call was successful"
+    if direction == "outgoing" and l1 in ("busy", "failed", "no-answer", "canceled"):
+        return "failed", {"busy": "Agent was busy", "no-answer": "Agent did not answer"}.get(l1, "Agent leg failed")
+    if l2 == "no-answer":
+        return "no_answer", "No user answered"
+    if l2 in ("failed", "canceled", "busy"):
+        return "hangup_during", "Client hung-up during call"
+    if not l2 and l1 == "completed":
+        return "hangup_before", "Client hung-up before connecting to any user"
+    st = (x.get("Status") or "").lower()
+    if st == "completed":
+        return "success", "Call was successful"
+    return "failed", _EXO_STATUS.get(st, st.replace("-", " ").title())
+
+_EXO_AGENT_CACHE = {"at": 0, "map": {}}
+
+async def _exo_agents(c, key, token, sid):
+    """Exotel CCM users -> {last10: (name, initials)}; cached 10 min."""
+    import time
+    if time.time() - _EXO_AGENT_CACHE["at"] < 600 and _EXO_AGENT_CACHE["map"]:
+        return _EXO_AGENT_CACHE["map"]
+    m = {}
+    try:
+        r = await c.get(f"https://ccm-api.exotel.com/v2/accounts/{sid}/users?limit=50&fields=devices", auth=(key, token))
+        for u in (r.json().get("response") or []):
+            d = u.get("data") or {}
+            fn, ln = (d.get("first_name") or "").strip(), (d.get("last_name") or "").strip()
+            name = (fn + " " + ln).strip()
+            ini = ((fn[:1] + ln[:1]) or name[:2]).upper()
+            for dev in d.get("devices") or []:
+                n10 = "".join(ch for ch in str(dev.get("contact_uri") or "") if ch.isdigit())[-10:]
+                if len(n10) == 10:
+                    m[n10] = (name, ini)
+        if m:
+            _EXO_AGENT_CACHE.update({"at": time.time(), "map": m})
+    except Exception as e:
+        logger.warning("Exotel users fetch failed: %s", e)
+    return m or _EXO_AGENT_CACHE["map"]
+
+async def exo_sync_calls(pages: int = 1):
+    """Pull latest calls from Exotel Calls API and upsert into db.exo_calls."""
+    import httpx
+    key, token = os.environ.get("EXOTEL_API_KEY"), os.environ.get("EXOTEL_API_TOKEN")
+    sid = os.environ.get("EXOTEL_ACCOUNT_SID")
+    if not (key and token and sid):
+        return {"ok": False, "error": "Exotel keys missing"}
+    base = "https://" + os.environ.get("EXOTEL_SUBDOMAIN", "api.exotel.com")
+    url = f"{base}/v1/Accounts/{sid}/Calls.json?PageSize=100&details=true"
+    saved = 0
+    async with httpx.AsyncClient(timeout=30) as c:
+        agents = await _exo_agents(c, key, token, sid)
+        for _ in range(pages):
+            r = await c.get(url, auth=(key, token))
+            if r.status_code >= 400:
+                logger.warning("Exotel calls sync failed: %s %s", r.status_code, r.text[:200])
+                return {"ok": False, "error": f"Exotel {r.status_code}"}
+            data = r.json()
+            calls = data.get("Calls") or ([data["Call"]] if isinstance(data.get("Call"), dict) else data.get("Call") or [])
+            for x in calls:
+                csid = x.get("Sid")
+                if not csid:
+                    continue
+                direction = "incoming" if (x.get("Direction") or "").startswith("inbound") else "outgoing"
+                customer = x.get("From") if direction == "incoming" else x.get("To")
+                lead = await find_lead_by_phone(customer or "")
+                status = (x.get("Status") or "").lower()
+                doc = {
+                    "sid": csid, "from_number": x.get("From"), "to_number": x.get("To"),
+                    "exophone": x.get("PhoneNumberSid"), "direction": direction,
+                    "status": status, "outcome_kind": _exo_outcome(x, direction)[0], "outcome": _exo_outcome(x, direction)[1],
+                    "talk_time": int((x.get("Details") or {}).get("ConversationDuration") or 0),
+                    "duration": int(x.get("Duration") or 0),
+                    "start_time": x.get("StartTime") or x.get("DateCreated"),
+                    "end_time": x.get("EndTime"), "recording_url": x.get("RecordingUrl"),
+                    "caller_name": x.get("CallerName"), "answered_by": x.get("AnsweredBy"),
+                    "lead_id": (lead or {}).get("id"), "lead_name": (lead or {}).get("name"),
+                    "lead_segment": (lead or {}).get("segment"),
+                    "synced_at": now_iso(),
+                }
+                # Incoming: "To" becomes the staff number once routed (else it equals the ExoPhone)
+                if direction == "incoming":
+                    to10 = "".join(ch for ch in str(x.get("To") or "") if ch.isdigit())[-10:]
+                    exo10 = "".join(ch for ch in str(x.get("PhoneNumberSid") or "") if ch.isdigit())[-10:]
+                    ag = x.get("To") if to10 and to10 != exo10 else ""
+                else:
+                    ag = x.get("From") or ""
+                ag10 = "".join(ch for ch in str(ag) if ch.isdigit())[-10:]
+                hit = agents.get(ag10) if len(ag10) == 10 else None
+                doc.update({"exophone_number": x.get("PhoneNumber"), "agent_number": ag or None,
+                            "agent_name": hit[0] if hit else None, "agent_initials": hit[1] if hit else None,
+                            "l1answered_by": x.get("l1answered_by"), "l2answered_by": x.get("l2answered_by")})
+                res = await db.exo_calls.update_one({"sid": csid}, {"$set": doc}, upsert=True)
+                saved += 1 if res.upserted_id else 0
+            nxt = (data.get("Metadata") or {}).get("NextPageUri")
+            if not nxt:
+                break
+            url = base + nxt
+    return {"ok": True, "new": saved}
+
+async def _exo_sync_loop():
+    while True:
+        try:
+            await exo_sync_calls()
+        except Exception as e:
+            logger.warning("ExoPhones sync error: %s", e)
+        await asyncio.sleep(60)
+
+@api.get("/exophones/calls")
+async def exophones_calls(q: str = "", direction: str = "", limit: int = 200, user: dict = Depends(get_current_user)):
+    f = {}
+    if direction in ("incoming", "outgoing"):
+        f["direction"] = direction
+    if q:
+        rx = {"$regex": q.strip(), "$options": "i"}
+        f["$or"] = [{"from_number": rx}, {"to_number": rx}, {"lead_name": rx}, {"sid": rx}, {"caller_name": rx}]
+    rows = await db.exo_calls.find(f, {"_id": 0}).sort("start_time", -1).to_list(min(limit, 1000))
+    last = await db.exo_calls.find_one({}, {"_id": 0, "synced_at": 1}, sort=[("synced_at", -1)])
+    return {"items": rows, "last_sync": (last or {}).get("synced_at")}
+
+@api.post("/exophones/sync")
+async def exophones_sync(user: dict = Depends(get_current_user)):
+    return await exo_sync_calls(pages=3)
+
+@api.get("/exophones/recording/{sid}")
+async def exophones_recording(sid: str, user: dict = Depends(get_current_user)):
+    import httpx
+    row = await db.exo_calls.find_one({"sid": sid})
+    if not row or not row.get("recording_url"):
+        raise HTTPException(status_code=404, detail="No recording")
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
+        r = await c.get(row["recording_url"], auth=(os.environ.get("EXOTEL_API_KEY", ""), os.environ.get("EXOTEL_API_TOKEN", "")))
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail="Recording not available")
+    return Response(content=r.content, media_type=r.headers.get("content-type", "audio/mpeg"))
 
 @api.get("/exotel/calls")
 async def get_exotel_calls(
@@ -1845,13 +2155,13 @@ async def startup():
     await seed_team()
     await seed()
     await migrate()
+    asyncio.create_task(_exo_sync_loop())
 @api.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     try:
         os.makedirs("uploads", exist_ok=True)
         ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'bin'
-        # Only allow safe file types
-        allowed = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'bin'}
+        allowed = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'mp4', '3gp', 'mp3', 'ogg', 'aac', 'm4a', 'amr', 'bin'}
         if ext not in allowed:
             ext = 'bin'
         filename = f"{uuid.uuid4().hex}.{ext}"

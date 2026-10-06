@@ -23,6 +23,7 @@ import TeamActivity from "@/pages/TeamActivity";
 import Others from "@/pages/Others";
 import Team from "@/pages/Team";
 import CallLogs from "@/pages/CallLogs";
+import ExoPhones from "@/pages/ExoPhones";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -65,10 +66,12 @@ export default function App() {
             <Route path="/team/activity" element={<TeamActivity />} />
             <Route path="/others" element={<Others />} />
             <Route path="/calls" element={<CallLogs segment="investor" />} />
+            <Route path="/exophones" element={<ExoPhones segment="investor" />} />
 
             {/* Driver Routes */}
             <Route path="/drivers" element={<DriverDashboard segment="driver" />} />
             <Route path="/drivers/calls" element={<CallLogs segment="driver" />} />
+            <Route path="/drivers/exophones" element={<ExoPhones segment="driver" />} />
             <Route path="/drivers/leads" element={<DriverLeads segment="driver" />} />
             <Route path="/drivers/leads/:id" element={<LeadProfile segment="driver" />} />
             <Route path="/drivers/common-leads" element={<CommonLeads key="driver" segment="driver" />} />
