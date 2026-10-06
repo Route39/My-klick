@@ -101,6 +101,7 @@ function AddTeamMemberModal({ onSuccess }) {
                     <SelectItem value="Tirupur" className="rounded-lg">Tirupur</SelectItem>
                   </SelectContent>
                 </Select>
+                {location && <p className="mt-1.5 text-xs font-medium text-violet-600">State: {location === "Bangalore" ? "Karnataka" : "Tamil Nadu"}</p>}
               </div>
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Joining Date</Label>
@@ -154,6 +155,8 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("sales");
+  const [location, setLocation] = useState("");
+  const [joiningDate, setJoiningDate] = useState("");
 
   React.useEffect(() => {
     if (staff && open && !isEditing) {
@@ -161,6 +164,8 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
       setPhone(staff.phone || "");
       setEmail(staff.email || "");
       setRole(staff.role);
+      setLocation(staff.location || "");
+      setJoiningDate(staff.joining_date || "");
     }
   }, [staff, open, isEditing]);
 
@@ -168,7 +173,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
 
   const handleSave = (e) => {
     e.preventDefault();
-    onUpdate(staff.id, { name, phone, email, role }, () => {
+    onUpdate(staff.id, { name, phone, email, role, location, joining_date: joiningDate }, () => {
       setIsEditing(false);
     });
   };
@@ -197,6 +202,22 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-xl border-slate-200" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
+                <Select value={location} onValueChange={setLocation}>
+                  <SelectTrigger className="rounded-xl border-slate-200 bg-white"><SelectValue placeholder="Select location" /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-200">
+                    {["Bangalore", "Coimbatore", "Chennai", "Tirupur"].map(l => <SelectItem key={l} value={l} className="rounded-lg">{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {location && <p className="mt-1.5 text-xs font-medium text-violet-600">State: {location === "Bangalore" ? "Karnataka" : "Tamil Nadu"}</p>}
+              </div>
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Joining Date</Label>
+                <Input type="date" value={joiningDate} onChange={e => setJoiningDate(e.target.value)} className="rounded-xl border-slate-200" />
+              </div>
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Role</Label>
@@ -293,7 +314,7 @@ export default function Team() {
 
       {isLoading ? <ListSkeleton count={4} /> : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((m, i) => {
+          {data.filter((m, idx, arr) => arr.findIndex(x => (x.id || x.email || x.phone) === (m.id || m.email || m.phone)) === idx).map((m, i) => {
             const rank = RANK[i];
             return (
               <motion.div key={m.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.05, 0.3) }}

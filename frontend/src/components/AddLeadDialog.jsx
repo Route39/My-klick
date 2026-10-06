@@ -40,10 +40,12 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
       onOpenChange(false);
       navigate(`/leads/${lead.id}`);
     },
-    onError: () => toast.error("Could not create lead"),
+    onError: (e) => toast.error(typeof e.response?.data?.detail === "string" ? e.response.data.detail : "Could not create lead"),
   });
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+  const phoneDigits = form.phone.replace(/\D/g, "");
+  const canSubmit = form.name.trim().length > 0 && phoneDigits.length >= 10;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -57,7 +59,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
         </DialogHeader>
         <form
           className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); create.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (canSubmit) create.mutate(); }}
         >
           <div className="space-y-1.5">
             <Label>Name</Label>
@@ -113,7 +115,8 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
             <Input data-testid="lead-remarks-input" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)}
               placeholder="Any additional remarks..." className="rounded-xl" />
           </div>
-          <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending}
+          {!canSubmit && <p className="text-xs text-slate-400 text-center">Enter name and a valid 10-digit phone to continue</p>}
+          <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending || !canSubmit}
             className="w-full rounded-xl py-6 text-base font-semibold">
             {create.isPending ? "Creating…" : "Create Lead"}
           </Button>

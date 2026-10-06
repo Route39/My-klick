@@ -45,8 +45,15 @@ export function CommonLeadsNotifier({ intervalMs = 15000 }) {
   const qc = useQueryClient();
   const navRef = useRef(navigate);
   navRef.current = navigate;
-  const sinceRef = useRef(new Date().toISOString());
+  const sinceRef = useRef((() => {
+    try {
+      const saved = localStorage.getItem("myklick_common_seen");
+      const floor = new Date(Date.now() - 12 * 3600 * 1000).toISOString(); // max 12h back
+      return saved && saved > floor ? saved : new Date().toISOString();
+    } catch (_) { return new Date().toISOString(); }
+  })());
   const ringRef = useRef(null);
+  const activeRef = useRef(new Map());
 
   const stopRing = () => {
     const r = ringRef.current;
@@ -77,22 +84,44 @@ export function CommonLeadsNotifier({ intervalMs = 15000 }) {
         const { data } = await api.get("/common-leads/latest", { params: { since: sinceRef.current } });
         if (!alive || !data?.length) return;
         sinceRef.current = data[data.length - 1].created_at;
+        try { localStorage.setItem("myklick_common_seen", sinceRef.current); } catch (_) {}
         await startRing();
         qc.invalidateQueries({ queryKey: ["common-leads"] });
         data.forEach((l) => {
+          activeRef.current.set(l.id, true);
           const path = l.segment === "driver" ? "/drivers/common-leads" : "/common-leads";
           toast(`New common ${l.segment === "driver" ? "driver" : "investor"} lead`, {
             description: `${l.name} · posted by ${l.created_by_name || "Admin"}`,
             duration: RING_DURATION_MS,
             closeButton: true,
+            id: `cl-${l.id}`,
             action: { label: "View", onClick: () => { stopRing(); navRef.current(path); } },
-            onDismiss: stopRing,
+            onDismiss: () => { activeRef.current.delete(l.id); if (!activeRef.current.size) stopRing(); },
           });
         });
       } catch (_) { /* ignore network blips */ }
     };
     const id = setInterval(tick, intervalMs);
     return () => { alive = false; clearInterval(id); stopRing(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Someone claimed it -> stop ring + close popup for everyone else
+  useEffect(() => {
+    const id = setInterval(async () => {
+      if (!activeRef.current.size) return;
+      try {
+        const { data } = await api.get("/common-leads");
+        const open = new Set((data || []).map((l) => l.id));
+        let taken = false;
+        activeRef.current.forEach((_, lid) => {
+          if (!open.has(lid)) { activeRef.current.delete(lid); toast.dismiss(`cl-${lid}`); taken = true; }
+        });
+        if (!activeRef.current.size) stopRing();
+        if (taken) { toast("Lead already taken", { duration: 3000 }); qc.invalidateQueries({ queryKey: ["common-leads"] }); }
+      } catch (_) {}
+    }, 4000);
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
