@@ -1,3 +1,4 @@
+import re
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -103,6 +104,17 @@ def is_manager(user: dict) -> bool:
 def seg_match(segment):
     return {"$in": ["investor", None]} if segment == "investor" else segment
 
+REGIONS = ["Tamil Nadu", "Karnataka"]
+
+LOC_REGION = {"chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu", "tirupur": "Tamil Nadu", "tiruppur": "Tamil Nadu",
+              "madurai": "Tamil Nadu", "trichy": "Tamil Nadu", "bangalore": "Karnataka", "bengaluru": "Karnataka"}
+
+def staff_region(user: dict):
+    """Admin, team leader, admin+staff see every state; staff their region, else derived from location (none = nothing)."""
+    if can_view_all(user):
+        return None
+    return user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower()) or "__none__"
+
 def scope_leads(user: dict, base: dict = None) -> dict:
     """Organisation + role scoping for lead queries."""
     q = dict(base or {})
@@ -169,6 +181,8 @@ class TeamMemberUpdate(BaseModel):
     phone: str
     email: str = ""
     role: str
+    location: Optional[str] = None
+    joining_date: Optional[str] = None
 
 class TeamMemberIn(BaseModel):
     name: str
@@ -202,7 +216,10 @@ class LeadIn(BaseModel):
     status: str = "new"
     priority: str = "medium"
     segment: str = "investor"
+    region: Optional[str] = ""
+    language: Optional[str] = ""
     assigned_to: Optional[str] = None
+    state: Optional[str] = ""
     is_common: bool = False
     value: float = 0
     notes: Optional[str] = ""
@@ -358,6 +375,9 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         {"id": user_id, "organization_id": org_of(user)},
         {"$set": update_data}
     )
+    _extra = {k: v for k, v in {"location": body.location, "joining_date": body.joining_date}.items() if v}
+    if _extra:
+        await db.users.update_one({"id": user_id}, {"$set": _extra})
     return {"ok": True}
 
 class NoteIn(BaseModel):
@@ -445,7 +465,8 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     def blank():
         return {"total_calls": 0, "connected": 0, "talk_seconds": 0, "tele_call": 0,
                 "spoke_investor": set(), "spoke_driver": set(), "prev_followup": set(),
-                "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set()}
+                "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set(),
+                "tele_ids": set(), "call_leads": set()}
     st = {}
 
     for c in calls:
@@ -453,6 +474,8 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         x["total_calls"] += 1
         dur = int(c.get("duration_seconds") or 0)
         lid = c.get("lead_id")
+        if lid:
+            x["call_leads"].add(lid)
         lead = leads.get(lid) or {}
         seg = lead.get("segment") or c.get("segment") or "investor"
         if lead.get("status") == "converted" and seg == "investor":
@@ -483,6 +506,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     for l in created:
         if l.get("created_by"):
             st.setdefault(l["created_by"], blank())["tele_call"] += 1
+            st[l["created_by"]]["tele_ids"].add(l["id"])
     for l in new_interested:
         if l.get("created_by"):
             st.setdefault(l["created_by"], blank())["interested_driver"].add(l["id"])
@@ -495,10 +519,13 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     for u in users:
         uid = u.get("id") or str(u.get("_id", ""))
         x = st.get(uid, blank())
+        logged = x["tele_ids"] | x["rnr"] | x["interested_driver"]
+        total_calls = x["total_calls"] + len(logged - x["call_leads"])
         rows.append({
             "id": uid, "name": u.get("name", ""), "role": u.get("role", ""), "rnr": len(x["rnr"]),
             "location": u.get("location", ""),
-            "total_calls": x["total_calls"], "tele_call": x["tele_call"],
+            "joining_date": u.get("joining_date", ""),
+            "total_calls": total_calls, "tele_call": x["tele_call"],
             "spoke_investor": len(x["spoke_investor"]), "spoke_driver": len(x["spoke_driver"]),
             "prev_followup": len(x["prev_followup"]), "conv_investor": len(x["conv_investor"]),
             "interested_driver": len(x["interested_driver"]), "payment": round(x["payment"], 2),
@@ -577,15 +604,47 @@ async def list_leads(
 # ---------------------------------------------------------------------------
 # Common leads: admin-posted pool that any staff can see and claim
 # ---------------------------------------------------------------------------
+CITY_STATE = {
+    "bangalore": "Karnataka", "bengaluru": "Karnataka", "banglore": "Karnataka", "blr": "Karnataka",
+    "chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu", "kovai": "Tamil Nadu",
+    "tirupur": "Tamil Nadu", "tiruppur": "Tamil Nadu",
+}
+
+def state_of(location: str) -> str:
+    """City / free-text location -> state ('' if unknown)."""
+    loc = (location or "").strip().lower()
+    if not loc:
+        return ""
+    if loc in ("karnataka", "tamil nadu", "tamilnadu", "tn"):
+        return "Karnataka" if loc == "karnataka" else "Tamil Nadu"
+    for city, st in CITY_STATE.items():
+        if city in loc:
+            return st
+    return ""
+
+def lead_state(lead: dict) -> str:
+    return lead.get("state") or state_of(lead.get("location", ""))
+
+def user_sees_lead(user: dict, lead: dict) -> bool:
+    """Staff only see / hear common leads of their own state. Unknown state on either side -> visible."""
+    if can_view_all(user):
+        return True
+    us, ls = state_of(user.get("location", "")), lead_state(lead)
+    return not us or not ls or us == ls
+
 def common_query(user: dict, segment: Optional[str] = None) -> dict:
     q = {"organization_id": org_of(user), "is_common": True, "assigned_to": None}
     if segment:
         q["segment"] = segment
+    reg = staff_region(user)
+    if reg:
+        q["region"] = reg
     return q
 
 @api.get("/common-leads")
 async def list_common_leads(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     leads = await db.leads.find(common_query(user, segment)).sort("created_at", -1).to_list(2000)
+    leads = [l for l in leads if user_sees_lead(user, l)]
     return [clean(l) for l in leads]
 
 @api.get("/common-leads/latest")
@@ -595,16 +654,43 @@ async def latest_common_leads(since: str, user: dict = Depends(get_current_user)
     q["created_at"] = {"$gt": since}
     q["created_by"] = {"$ne": user["id"]}
     leads = await db.leads.find(q).sort("created_at", 1).to_list(50)
-    return [{"id": l["id"], "name": l.get("name"), "segment": l.get("segment", "investor"),
+    leads = [l for l in leads if user_sees_lead(user, l)]
+    return [{"id": l["id"], "name": l.get("name"), "segment": l.get("segment", "investor"), "state": lead_state(l),
              "created_at": l.get("created_at"), "created_by_name": l.get("created_by_name", "")} for l in leads]
+
+@api.get("/common-leads/report-mine")
+async def common_leads_report_mine(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """Staff version of the common-leads report: own state only; others' phone numbers masked."""
+    q = {"organization_id": org_of(user), "$or": [{"from_common": True}, {"is_common": True}, {"created_as_common": True}]}
+    if segment:
+        q["segment"] = segment
+    reg = staff_region(user)
+    if reg:
+        q["region"] = reg
+    leads = await db.leads.find(q).sort("created_at", -1).to_list(3000)
+    out = []
+    for l in leads:
+        mine_or_open = (not l.get("assigned_to")) or l.get("assigned_to") == user.get("id")
+        ph = l.get("phone", "") or ""
+        out.append({
+            "id": l.get("id"), "name": l.get("name", ""),
+            "phone": ph if mine_or_open else ("XXXXXX" + ph[-4:] if len(ph) >= 4 else "XXXX"),
+            "location": l.get("location", ""), "region": l.get("region", ""), "language": l.get("language", ""),
+            "segment": l.get("segment", "investor"), "status": l.get("status", "new"),
+            "assigned_to": l.get("assigned_to"), "assigned_name": l.get("assigned_name", ""),
+            "claimed_at": l.get("claimed_at"), "created_at": l.get("created_at"),
+            "created_by_name": l.get("created_by_name", ""),
+        })
+    return out
 
 @api.post("/common-leads/{lead_id}/claim")
 async def claim_common_lead(lead_id: str, user: dict = Depends(get_current_user)):
     """Atomic claim: only the first staff to click gets it."""
     lead = await db.leads.find_one_and_update(
-        {"id": lead_id, "organization_id": org_of(user), "is_common": True, "assigned_to": None},
+        {"id": lead_id, "organization_id": org_of(user), "is_common": True, "assigned_to": None,
+         **({"region": staff_region(user)} if staff_region(user) else {})},
         {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
-                  "is_common": False, "claimed_at": now_iso(), "updated_at": now_iso()}},
+                  "is_common": False, "from_common": True, "claimed_at": now_iso(), "updated_at": now_iso()}},
         return_document=True,
     )
     if not lead:
@@ -613,6 +699,31 @@ async def claim_common_lead(lead_id: str, user: dict = Depends(get_current_user)
                                    {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", "")}})
     await log_activity("lead_claimed", lead, user, "assigned a common lead to themselves")
     return clean(lead)
+
+@api.get("/common-leads/report")
+async def common_leads_report(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
+    if not can_view_all(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    q = {"organization_id": org_of(user),
+         "$or": [{"is_common": True}, {"from_common": True}, {"claimed_at": {"$exists": True}}]}
+    if segment:
+        q["segment"] = seg_match(segment)
+    leads = await db.leads.find(q).sort("created_at", -1).to_list(5000)
+    keys = ("id", "name", "phone", "location", "region", "segment", "status", "assigned_to",
+            "assigned_name", "claimed_at", "created_at", "created_by_name", "remarks")
+    return [{k: l.get(k) for k in keys} for l in leads]
+
+class RegionIn(BaseModel):
+    region: str = ""
+
+@api.put("/team/{user_id}/region")
+async def set_team_region(user_id: str, body: RegionIn, user: dict = Depends(get_current_user)):
+    if not can_view_all(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if body.region and body.region not in REGIONS:
+        raise HTTPException(status_code=400, detail="Invalid state")
+    await db.users.update_one({"id": user_id, "organization_id": org_of(user)}, {"$set": {"region": body.region}})
+    return {"ok": True}
 
 @api.get("/leads/{lead_id}")
 async def get_lead(lead_id: str, user: dict = Depends(get_current_user)):
@@ -665,6 +776,20 @@ async def get_lead_metadata(lead_id: str, user: dict = Depends(get_current_user)
 
 @api.post("/leads")
 async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
+    # Duplicate check: same phone number already in leads -> block
+    _n = norm_phone(body.phone)
+    if _n:
+        _q = {"organization_id": org_of(user), "$or": [{"phone_norm": _n}]}
+        if len(_n) == 10:
+            _q["$or"].append({"phone": {"$regex": re.escape(_n) + "$"}})
+        _dup = await db.leads.find_one(_q)
+        if _dup:
+            _who = _dup.get("assigned_name") or ("Common Leads (not taken)" if _dup.get("is_common") else "Unassigned")
+            raise HTTPException(status_code=409, detail=f"This number already exists — {_dup.get('name', '')} · {_who}")
+    if body.is_common and is_manager(user) and body.region not in REGIONS:
+        raise HTTPException(status_code=400, detail="Select a state (Tamil Nadu / Karnataka)")
+    if not (body.name or "").strip() or len(norm_phone(body.phone)) < 10:
+        raise HTTPException(status_code=400, detail="Name and a valid 10-digit phone are required")
     try:
         assigned = None
         is_common = bool(body.is_common and (is_manager(user) or user.get("role") == "admin_staff"))
@@ -672,7 +797,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             assigned = None  # common pool: no owner until a staff claims it
         elif body.assigned_to:
             assigned = await db.users.find_one({"id": body.assigned_to})
-        elif not is_manager(user):
+        elif not can_view_all(user):
             # Auto-assign to the creator if they are not a manager
             assigned = user
 
@@ -687,11 +812,13 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             "email": body.email or "", "location": body.location or "", "product": body.product or "",
             "source": body.source, "status": body.status, "priority": body.priority,
             "segment": body.segment, "is_common": is_common,
+            "region": body.region or "", "language": body.language or "", "from_common": is_common,
             "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
             "value": body.value, "notes": body.notes or "", "next_followup": None,
             "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
             "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
             "pan_url": body.pan_url or "", "license_url": body.license_url or "",
+            "state": (body.state or state_of(body.location or "")),
             "created_by": user.get("id"), "created_by_name": user.get("name", ""),
             "created_at": now_iso(), "updated_at": now_iso(),
         }
@@ -2220,8 +2347,10 @@ async def startup():
         pass
         
     await seed_admin()
-    await seed_team()
-    await seed()
+    # Demo team + demo leads only when explicitly enabled (never on live)
+    if os.environ.get("SEED_DEMO_DATA", "false").lower() == "true" and os.environ.get("APP_ENV", "development").lower() != "production":
+        await seed_team()
+        await seed()
     await migrate()
     asyncio.create_task(_exo_sync_loop())
 @api.post("/upload")
