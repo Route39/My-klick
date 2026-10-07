@@ -95,3 +95,4 @@ backend/req-base.txt
 
 *.bak*
 .env
+backend/uploads/

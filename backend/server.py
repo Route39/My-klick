@@ -1608,7 +1608,7 @@ async def exophones_calls(q: str = "", direction: str = "", limit: int = 25, ski
     users = {u["id"]: u for u in await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "location": 1}).to_list(500)}
     is_admin = user.get("role") == "admin"
     for r in rows:
-        owner = (leads.get(r.get("lead_id")) or {}).get("assigned_to") or r.get("claimed_by")
+        owner = r.get("claimed_by")  # grey only after "Assign to me"
         u = users.get(owner) if owner else None
         r["claimed_by"] = owner or None
         r["claimed_name"] = (u or {}).get("name") or r.get("claimed_name")
