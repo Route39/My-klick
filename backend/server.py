@@ -449,12 +449,17 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     calls = await db.calls.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng}).to_list(50000)
     acts = await db.activities.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng,
                                      "type": {"$in": ["converted", "status_change"]}}).to_list(50000)
-    created = await db.leads.find({"organization_id": org, "created_at": rng,
-                                   "$or": [{"is_common": True}, {"created_as_common": True},
-                                           {"claimed_at": {"$exists": True}}]}).to_list(50000)
+    # Common leads TAKEN in this period -> credit the staff who clicked "Assign to me"
+    created = await db.leads.find({"organization_id": org, "claimed_at": rng,
+                                   "assigned_to": {"$ne": None}}).to_list(50000)
     new_rnr = await db.leads.find({"organization_id": org, "created_at": rng, "status": "rnr"}).to_list(50000)
     new_interested = await db.leads.find({"organization_id": org, "created_at": rng,
                                           "segment": "driver", "status": "interested"}).to_list(50000)
+    added = await db.leads.find({"organization_id": org, "created_at": rng, "created_by": {"$ne": None},
+                                 "is_common": {"$ne": True}, "from_common": {"$ne": True},
+                                 "created_as_common": {"$ne": True}},
+                                {"id": 1, "created_by": 1}).to_list(100000)
+    fus = await db.followups.find({"organization_id": org, "due_at": rng}).to_list(50000)
 
     lead_ids = {c.get("lead_id") for c in calls if c.get("lead_id")} | {a.get("lead_id") for a in acts if a.get("lead_id")}
     leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": list(lead_ids)}}).to_list(50000)} if lead_ids else {}
@@ -466,7 +471,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         return {"total_calls": 0, "connected": 0, "talk_seconds": 0, "tele_call": 0,
                 "spoke_investor": set(), "spoke_driver": set(), "prev_followup": set(),
                 "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set(),
-                "tele_ids": set(), "call_leads": set()}
+                "tele_ids": set(), "call_leads": set(), "added_ids": set(), "no_lead_calls": 0, "fu": []}
     st = {}
 
     for c in calls:
@@ -476,6 +481,8 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         lid = c.get("lead_id")
         if lid:
             x["call_leads"].add(lid)
+        else:
+            x["no_lead_calls"] += 1
         lead = leads.get(lid) or {}
         seg = lead.get("segment") or c.get("segment") or "investor"
         if lead.get("status") == "converted" and seg == "investor":
@@ -504,9 +511,15 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
             x["rnr"].add(lid)
 
     for l in created:
-        if l.get("created_by"):
-            st.setdefault(l["created_by"], blank())["tele_call"] += 1
-            st[l["created_by"]]["tele_ids"].add(l["id"])
+        if l.get("assigned_to"):
+            st.setdefault(l["assigned_to"], blank())["tele_call"] += 1
+            st[l["assigned_to"]]["tele_ids"].add(l["id"])
+    # Admin / team leader who POSTED common leads in this period -> Tele Call count
+    posted = await db.leads.find({"organization_id": org, "created_at": rng, "created_by": {"$ne": None},
+                                  "$or": [{"is_common": True}, {"from_common": True}, {"created_as_common": True}]},
+                                 {"id": 1, "created_by": 1}).to_list(50000)
+    for l in posted:
+        st.setdefault(l["created_by"], blank())["tele_call"] += 1
     for l in new_interested:
         if l.get("created_by"):
             st.setdefault(l["created_by"], blank())["interested_driver"].add(l["id"])
@@ -515,12 +528,21 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         if l.get("created_by"):
             st.setdefault(l["created_by"], blank())["rnr"].add(l["id"])
 
+    for l in added:
+        st.setdefault(l["created_by"], blank())["added_ids"].add(l["id"])
+    for f in fus:
+        if f.get("assigned_to"):
+            st.setdefault(f["assigned_to"], blank())["fu"].append({
+                "lead_id": f.get("lead_id"), "lead_name": f.get("lead_name", ""), "due_at": f.get("due_at"),
+                "status": f.get("status", "pending"), "reason": f.get("reason", "")})
+
     rows = []
     for u in users:
         uid = u.get("id") or str(u.get("_id", ""))
         x = st.get(uid, blank())
-        logged = x["tele_ids"] | x["rnr"] | x["interested_driver"]
-        total_calls = x["total_calls"] + len(logged - x["call_leads"])
+        logged = x["tele_ids"] | x["rnr"] | x["interested_driver"] | x["added_ids"]
+        total_calls = len(x["call_leads"] | logged) + x["no_lead_calls"]  # unique leads touched
+        fu_list = sorted(x["fu"], key=lambda f: f.get("due_at") or "")
         rows.append({
             "id": uid, "name": u.get("name", ""), "role": u.get("role", ""), "rnr": len(x["rnr"]),
             "location": u.get("location", ""),
@@ -530,6 +552,8 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
             "prev_followup": len(x["prev_followup"]), "conv_investor": len(x["conv_investor"]),
             "interested_driver": len(x["interested_driver"]), "payment": round(x["payment"], 2),
             "connected": x["connected"], "talk_seconds": x["talk_seconds"],
+            "followups_total": len(fu_list), "followups": fu_list,
+            "followups_done": sum(1 for f in fu_list if f["status"] == "completed"),
         })
     rows.sort(key=lambda r: (r["conv_investor"], r["spoke_investor"] + r["spoke_driver"], r["total_calls"]), reverse=True)
     keys = ("total_calls", "tele_call", "spoke_investor", "spoke_driver", "prev_followup",

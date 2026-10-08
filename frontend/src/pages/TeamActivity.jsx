@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { StickyNote, PhoneOff, PhoneOutgoing, Headset, Users, Truck, History, BadgeCheck, ThumbsUp, IndianRupee, MapPin } from "lucide-react";
+import { CalendarClock, StickyNote, PhoneOff, PhoneOutgoing, Headset, Users, Truck, History, BadgeCheck, ThumbsUp, IndianRupee, MapPin } from "lucide-react";
 import api from "@/lib/api";
 import { Avatar } from "@/components/InitialsAvatar";
 import { ListSkeleton } from "@/components/Skeletons";
@@ -23,6 +23,7 @@ const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFract
 
 const METRICS = [
   { key: "total_calls", label: "Total Calls", icon: PhoneOutgoing },
+  { key: "followups_total", label: "Follow-ups", icon: CalendarClock },
   { key: "tele_call", label: "Tele Call", icon: Headset },
   { key: "spoke_investor", label: "Spoked Investor", icon: Users },
   { key: "spoke_driver", label: "Spoked Driver", icon: Truck },
@@ -45,6 +46,7 @@ export default function TeamActivity() {
   const [end, setEnd] = useState(today);
   const [location, setLocation] = useState("All");
   const [othersOpen, setOthersOpen] = useState(false);
+  const [fuRow, setFuRow] = useState(null);
 
   const params = period === "custom" ? { period, start, end } : { period };
   const { data, isLoading, isError, error } = useQuery({
@@ -148,7 +150,12 @@ export default function TeamActivity() {
                   </td>
                   {METRICS.map(m => (
                     <td key={m.key} className={cn("px-2 py-3 text-center font-semibold tabular-nums", m.accent ? "text-emerald-600" : "text-slate-900")}>
-                      {m.fmt ? m.fmt(r[m.key]) : r[m.key]}
+                      {m.key === "followups_total" ? (
+                        <button type="button" disabled={!r.followups_total} onClick={() => setFuRow(r)}
+                          className="rounded-lg px-2 py-0.5 text-primary underline-offset-2 hover:underline disabled:text-slate-400 disabled:no-underline">
+                          {r.followups_done || 0} / {r.followups_total || 0}
+                        </button>
+                      ) : m.fmt ? m.fmt(r[m.key]) : r[m.key]}
                     </td>
                   ))}
                 </tr>
@@ -157,6 +164,29 @@ export default function TeamActivity() {
           </table>
         </div>
       )}
+
+      <Dialog open={!!fuRow} onOpenChange={(v) => { if (!v) setFuRow(null); }}>
+        <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto rounded-3xl sm:max-w-lg">
+          <DialogTitle>{fuRow?.name} · Follow-ups</DialogTitle>
+          <div className="space-y-2">
+            {(fuRow?.followups || []).map((f, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-slate-900">{f.lead_name || "Lead"}</div>
+                  <div className="text-xs text-slate-600">
+                    {f.due_at ? new Date(f.due_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : ""}
+                    {f.reason ? ` · ${f.reason}` : ""}
+                  </div>
+                </div>
+                <span className={cn("shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold",
+                  f.status === "completed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-100 text-amber-800")}>
+                  {f.status === "completed" ? "Done" : "Pending"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={othersOpen} onOpenChange={setOthersOpen}>
         <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto rounded-3xl sm:max-w-3xl">
