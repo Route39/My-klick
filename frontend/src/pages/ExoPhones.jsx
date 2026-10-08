@@ -63,7 +63,7 @@ export default function ExoPhones({ segment = "investor" }) {
     queryKey: ["exophones", search, direction, page],
     queryFn: async () => (await api.get("/exophones/calls", { params: { q: search, direction, limit: PAGE, skip: page * PAGE } })).data,
     placeholderData: (prev) => prev,
-    refetchInterval: 30000,
+    refetchInterval: 5000,
   });
   const sync = useMutation({
     mutationFn: async () => (await api.post("/exophones/sync")).data,
