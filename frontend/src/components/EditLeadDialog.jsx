@@ -54,7 +54,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Email"><Input value={form.email} onChange={(e) => set("email")(e.target.value)} className="rounded-xl" /></Field>
-            <Field label="Location"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Source">
@@ -74,6 +74,12 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
               <Select value={form.priority} onValueChange={set("priority")}>
                 <SelectTrigger data-testid="edit-priority" className="rounded-xl"><SelectValue /></SelectTrigger>
                 <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Branch">
+              <Select value={form.branch} onValueChange={set("branch")}>
+                <SelectTrigger data-testid="edit-branch" className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>{["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
           </div>
@@ -112,7 +118,7 @@ function shape(l = {}) {
     location: l.location || "", product: l.product || "", source: l.source || "manual",
     status: l.status || "new", priority: l.priority || "medium",
     assigned_to: l.assigned_to || "", value: l.value || 0, notes: l.notes || "", company: l.company || "",
-    no_of_vehicles: l.no_of_vehicles || "", remarks: l.remarks || "",
+    no_of_vehicles: l.no_of_vehicles || "", branch: l.branch || "", remarks: l.remarks || "",
     segment: l.segment || "investor", rc: l.rc || "",
     aadhaar_url: l.aadhaar_url || "", pan_url: l.pan_url || "", license_url: l.license_url || "",
   };

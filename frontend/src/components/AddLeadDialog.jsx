@@ -19,7 +19,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "",
+    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "",
   });
 
   const { data: users = [] } = useQuery({
@@ -36,7 +36,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
     onSuccess: (lead) => {
       qc.invalidateQueries();
       toast.success("Lead created ✓", { description: lead.name });
-      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "" });
+      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "" });
       onOpenChange(false);
       navigate(`/leads/${lead.id}`);
     },
@@ -106,6 +106,22 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 <SelectTrigger data-testid="lead-assign-select" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
                   {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>City</Label>
+              <Input data-testid="lead-city-input" value={form.location} onChange={(e) => set("location")(e.target.value)}
+                placeholder="e.g. Hosur" className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Branch</Label>
+              <Select value={form.branch} onValueChange={set("branch")}>
+                <SelectTrigger data-testid="lead-branch-select" className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>
+                  {["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

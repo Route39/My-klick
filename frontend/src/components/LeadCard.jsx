@@ -133,7 +133,7 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
             </span>
           )}
         </div>
-        <PriorityBadge priority={lead.priority} />
+        {/* <PriorityBadge priority={lead.priority} /> */}
       </div>
 
       {/* Avatar + Name */}

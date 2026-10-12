@@ -264,6 +264,8 @@ class LeadIn(BaseModel):
     value: float = 0
     notes: Optional[str] = ""
     no_of_vehicles: Optional[str] = ""
+    city: Optional[str] = ""
+    branch: Optional[str] = ""
     remarks: Optional[str] = ""
     rc: Optional[str] = ""
     aadhaar_url: Optional[str] = ""
@@ -461,8 +463,7 @@ async def mark_note_noted(note_id: str, user: dict = Depends(get_current_user)):
 async def team_activity(period: str = "today", start: str = "", end: str = "",
                         user: dict = Depends(get_current_user)):
     """Per-member activity report for a date range (IST). Admin, team leader, admin+staff."""
-    if not can_view_team(user):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    self_only = not can_view_team(user)
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
     one_day = timedelta(days=1)
@@ -485,7 +486,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     rng = {"$gte": s.astimezone(timezone.utc).isoformat(), "$lt": e.astimezone(timezone.utc).isoformat()}
 
     org = org_of(user)
-    users = await db.users.find({"organization_id": org}).to_list(500)
+    users = await db.users.find({"organization_id": org, **({"id": user["id"]} if self_only else {})}).to_list(500)
     calls = await db.calls.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng}).to_list(50000)
     acts = await db.activities.find({"organization_id": org, "user_id": {"$ne": None}, "created_at": rng,
                                      "type": {"$in": ["converted", "status_change"]}}).to_list(50000)
@@ -897,7 +898,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             "region": body.region or "", "language": body.language or "", "from_common": is_common,
             "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
             "value": body.value, "notes": body.notes or "", "next_followup": None,
-            "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "",
+            "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "", "city": body.city or "", "branch": body.branch or "",
             "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
             "pan_url": body.pan_url or "", "license_url": body.license_url or "",
             "state": (body.state or state_of(body.location or "")),
@@ -1703,6 +1704,16 @@ async def exophones_calls(q: str = "", direction: str = "", limit: int = 25, ski
     # Who owns each lead now (name + location) -> row shows as taken
     lids = list({r["lead_id"] for r in rows if r.get("lead_id")})
     leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": lids}}, {"_id": 0, "id": 1, "assigned_to": 1, "assigned_name": 1}).to_list(2000)}
+    cust = lambda r: r.get("from_number") if r.get("direction") == "incoming" else r.get("to_number")
+    nums = list({cust(r) for r in rows if cust(r)})
+    by_num = {}
+    if nums:
+        async for c in db.exo_calls.find({"claimed_by": {"$ne": None}, "$or": [{"direction": "incoming", "from_number": {"$in": nums}}, {"direction": "outgoing", "to_number": {"$in": nums}}]}, {"_id": 0}).sort("claimed_at", 1):
+            by_num.setdefault(cust(c), c)
+    for r in rows:
+        c = by_num.get(cust(r))
+        if c and not r.get("claimed_by"):
+            r["claimed_by"], r["claimed_name"], r["claimed_location"] = c["claimed_by"], c.get("claimed_name"), c.get("claimed_location")
     uids = list({l["assigned_to"] for l in leads.values() if l.get("assigned_to")} | {r["claimed_by"] for r in rows if r.get("claimed_by")})
     users = {u["id"]: u for u in await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "location": 1}).to_list(500)}
     is_admin = user.get("role") == "admin"
@@ -1724,6 +1735,12 @@ async def exophones_sync(user: dict = Depends(get_current_user)):
 @api.post("/exophones/calls/{sid}/claim")
 async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depends(get_current_user)):
     """Assign to me: first staff to click gets the caller's lead (created if new)."""
+    pre = await db.exo_calls.find_one({"sid": sid}, {"_id": 0}) or {}
+    fld = "from_number" if pre.get("direction") == "incoming" else "to_number"
+    if pre.get(fld):
+        other = await db.exo_calls.find_one({fld: pre[fld], "direction": pre.get("direction"), "claimed_by": {"$nin": [None, user["id"]]}}, {"_id": 0, "claimed_name": 1})
+        if other:
+            raise HTTPException(status_code=409, detail=f"Already taken by {other.get('claimed_name') or 'someone'}")
     call = await db.exo_calls.find_one_and_update(
         {"sid": sid, "claimed_by": None},
         {"$set": {"claimed_by": user["id"], "claimed_name": user.get("name", ""),

@@ -131,6 +131,15 @@ export default function AppShell() {
                 </NavLink>
               </>
             )}
+            {!["admin", "team_leader", "admin_staff"].includes(user?.role) && (
+              <NavLink to="/team/activity" data-testid="nav-my-activity"
+                className={({ isActive }) => cn(
+                  "mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                  isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}>
+                <Phone className="h-[18px] w-[18px]" /> My Activity
+              </NavLink>
+            )}
           </nav>
 
           {/* User footer — always pinned at bottom */}

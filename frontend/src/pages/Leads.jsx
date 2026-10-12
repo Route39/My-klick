@@ -201,7 +201,7 @@ function LeadList({ leads, segment }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate font-display font-semibold text-slate-900">{l.name}</span>
-              <PriorityBadge priority={l.priority} />
+              {/* <PriorityBadge priority={l.priority} /> */}
             </div>
             <div className="mt-0.5 flex items-center gap-3 text-xs text-slate-400">
               <span>{l.phone}</span><span className="hidden sm:block"><SourceBadge source={l.source} /></span>

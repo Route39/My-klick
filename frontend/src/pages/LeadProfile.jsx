@@ -119,7 +119,7 @@ export default function LeadProfile({ segment = "" }) {
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">{lead.name}</h1>
-              <PriorityBadge priority={lead.priority} />
+              {/* <PriorityBadge priority={lead.priority} /> */}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <StatusBadge status={lead.status} />
@@ -158,7 +158,7 @@ export default function LeadProfile({ segment = "" }) {
         <div className="relative mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <ActionBtn testid="profile-call" icon={Phone} label="Call" color="indigo" onClick={() => startCall(lead)} />
           <ActionBtn testid="profile-whatsapp" icon={MessageCircle} label="WhatsApp" color="emerald"
-            onClick={() => document.getElementById("wa-tab-trigger")?.click()} />
+            onClick={() => { const t = document.getElementById("wa-tab-trigger"); t?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); t?.focus(); t?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />
           <ActionBtn testid="profile-followup" icon={CalendarClock} label="Follow-up" color="amber" onClick={() => setFuOpen(true)} />
           {!converted && lead.segment !== "driver" && <ActionBtn testid="profile-convert" icon={Trophy} label="Convert" color="green" onClick={() => stage.mutate("converted")} />}
           <ActionBtn testid="profile-edit" icon={Pencil} label="Edit" color="slate" onClick={() => setEditOpen(true)} />
