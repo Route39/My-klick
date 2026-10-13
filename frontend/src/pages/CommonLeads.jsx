@@ -73,11 +73,20 @@ function StatCard({ label, value, tone = "" }) {
 
 const LANGS = ["Tamil", "English", "Kannada", "Hindi", "Telugu", "Malayalam"];
 
+// City filter tabs: label + spellings matched against the lead's location text
+const CITY_TABS = [
+  { key: "coimbatore", label: "Coimbatore", match: ["coimbatore", "kovai"] },
+  { key: "tirupur", label: "Tirupur", match: ["tirupur", "tiruppur"] },
+  { key: "bangalore", label: "Bangalore", match: ["bangalore", "bengaluru", "banglore", "blr"] },
+  { key: "chennai", label: "Chennai", match: ["chennai"] },
+];
+
 function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim, claiming, canOpen }) {
   const navigate = useNavigate();
   const [taken, setTaken] = useState("all");
   const [region, setRegion] = useState("all");
   const [city, setCity] = useState("");
+  const [cityTab, setCityTab] = useState("");
   const [lang, setLang] = useState("all");
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["common-leads", "report", segment, endpoint],
@@ -88,6 +97,11 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
   const scoped = rows
     .filter((r) => region === "all" || (r.region || "") === region)
     .filter((r) => !c || (r.location || "").toLowerCase().includes(c))
+    .filter((r) => {
+      if (!cityTab) return true;
+      const loc = (r.location || "").toLowerCase();
+      return (CITY_TABS.find((t) => t.key === cityTab)?.match || []).some((m) => loc.includes(m));
+    })
     .filter((r) => lang === "all" || (r.language || "").split(/,\s*/).includes(lang));
   const takenCount = scoped.filter((r) => r.assigned_to).length;
   const list = scoped.filter((r) => taken === "all" || (taken === "taken" ? r.assigned_to : !r.assigned_to));
@@ -105,6 +119,13 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {chip("all", "All")}{chip("taken", "Taken")}{chip("open", "Not Taken")}
+        <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+        {CITY_TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setCityTab(cityTab === t.key ? "" : t.key)}
+            className={`rounded-xl border px-3 py-1.5 text-sm ${cityTab === t.key ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"}`}>
+            {t.label}
+          </button>
+        ))}
         <select value={region} onChange={(e) => setRegion(e.target.value)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm">
           <option value="all">All States</option>
@@ -255,7 +276,7 @@ export default function CommonLeads({ segment = "investor" }) {
         <CommonLeadsReport segment={segment}
           endpoint={isManager ? "/common-leads/report" : "/common-leads/report-mine"}
           onClaim={(id) => claim.mutate(id)} claiming={claim.isPending}
-          canOpen={(r) => isManager || r.assigned_to === user?.id} />
+          canOpen={(r) => isManager || !r.assigned_to || r.assigned_to === user?.id} />
         {isManager && <StaffRegions />}
       </div>
 

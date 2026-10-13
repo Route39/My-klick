@@ -190,7 +190,8 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
         can_access = (
             lead.get("assigned_to") == user["id"] or
             lead.get("created_by") == user["id"] or
-            lead_inactive(lead)
+            lead_inactive(lead) or
+            (lead.get("is_common") and not lead.get("assigned_to") and user_sees_lead(user, lead))
         )
         if not can_access:
             raise HTTPException(status_code=403, detail="You don't have access to this lead")
@@ -745,7 +746,7 @@ async def common_leads_report_mine(segment: Optional[str] = None, user: dict = D
         q["segment"] = segment
     reg = staff_region(user)
     if reg:
-        q["region"] = reg
+        q["region"] = {"$in": [reg, "", None]}  # leads with no state (WhatsApp) are visible to all staff
     leads = await db.leads.find(q).sort("created_at", -1).to_list(3000)
     out = []
     for l in leads:
