@@ -123,7 +123,7 @@ export default function LeadProfile({ segment = "" }) {
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <StatusBadge status={lead.status} />
-              {lead.inactive && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600">Inactive</span>}
+              {/* {lead.inactive && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600">Inactive</span>} */}
               <SourceBadge source={lead.source} />
               <span className="text-sm text-slate-400">{lead.phone}</span>
             </div>

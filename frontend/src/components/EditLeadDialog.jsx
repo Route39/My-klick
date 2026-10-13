@@ -84,7 +84,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label={lead?.inactive ? "Assigned to (inactive: reassign & save)" : "Assigned to"}>
+            <Field label="Assigned to">
               <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
                 <SelectTrigger data-testid="edit-assign" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>{users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent>

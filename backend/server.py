@@ -115,46 +115,19 @@ def staff_region(user: dict):
         return None
     return user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower()) or "__none__"
 
-INACTIVE_DAYS = 5
-
-def inactive_cutoff() -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=INACTIVE_DAYS)).isoformat()
-
-def inactive_pool_cond() -> dict:
-    """Mongo condition: inactive and not yet taken over."""
-    return {"is_common": {"$ne": True},
-            "status": {"$nin": ["converted", "lost"]},
-            "status_changed_at": {"$lte": inactive_cutoff()}}
-
 def lead_inactive(lead: dict) -> bool:
-    if lead.get("is_common"):
-        return False
-    if lead.get("status") in ("converted", "lost"):
-        return False
-    ts = lead.get("status_changed_at") or lead.get("updated_at") or lead.get("created_at")
-    try:
-        d = datetime.fromisoformat(ts)
-    except Exception:
-        return False
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - d >= timedelta(days=INACTIVE_DAYS)
+    """Inactive-lead pool removed: leads never become visible to others by going stale."""
+    return False
 
 def scope_leads(user: dict, base: dict = None, pool: bool = False) -> dict:
-    """Organisation + role scoping. pool=True lets staff also see inactive (untaken) leads."""
+    """Organisation + role scoping. Admin, admin_staff and team leader see every lead.
+    Sales exec sees leads assigned to them plus unassigned leads."""
     q = dict(base or {})
     q["organization_id"] = org_of(user)
-    extra = []
-    if user.get("role") == "team_leader":
-        # hide leads that were taken over from the inactive pool by someone else
-        extra.append({"$or": [{"inactive_claimed": {"$ne": True}}, {"assigned_to": user["id"]}, inactive_pool_cond()]})
-    elif not can_view_all(user):
-        if pool:
-            extra.append({"$or": [{"assigned_to": user["id"]}, inactive_pool_cond()]})
-        else:
-            q["assigned_to"] = user["id"]
-    if extra:
-        q["$and"] = q.get("$and", []) + extra
+    if not can_view_all(user):
+        q["$and"] = q.get("$and", []) + [
+            {"$or": [{"assigned_to": user["id"]}, {"assigned_to": None}, {"assigned_to": ""}]}
+        ]
     return q
 
 async def get_current_user(request: Request) -> dict:
@@ -181,19 +154,10 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
     lead = await db.leads.find_one({"id": lead_id})
     if not lead or lead.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Lead not found")
-    if lead.get("inactive_claimed") and not lead_inactive(lead) \
-            and user.get("role") not in ("admin", "admin_staff") \
-            and lead.get("assigned_to") != user["id"]:
-        raise HTTPException(status_code=403, detail="You don't have access to this lead")
     if not can_view_all(user):
-        # Staff can access leads they are assigned to, created, or inactive (untaken) leads
-        can_access = (
-            lead.get("assigned_to") == user["id"] or
-            lead.get("created_by") == user["id"] or
-            lead_inactive(lead) or
-            (lead.get("is_common") and not lead.get("assigned_to") and user_sees_lead(user, lead))
-        )
-        if not can_access:
+        # Sales exec: leads assigned to them, or unassigned leads
+        assigned = lead.get("assigned_to")
+        if assigned and assigned != user["id"]:
             raise HTTPException(status_code=403, detail="You don't have access to this lead")
     return lead
 
@@ -948,11 +912,11 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     old_status = lead.get("status")
     if body.status != old_status:
         update["status_changed_at"] = now_iso()
-    if lead_inactive(lead) and body.assigned_to and body.assigned_to != lead.get("assigned_to"):
-        update["inactive_claimed"] = True
-        update["status_changed_at"] = now_iso()  # restart the 5-day timer
-        await log_activity("edit", lead, user, "took over an inactive lead",
-                           {"to": update.get("assigned_name"), "field": "assigned"})
+    # if lead_inactive(lead) and body.assigned_to and body.assigned_to != lead.get("assigned_to"):
+    #     update["inactive_claimed"] = True
+    #     update["status_changed_at"] = now_iso()  # restart the 5-day timer
+    #     await log_activity("edit", lead, user, "took over an inactive lead",
+    #                        {"to": update.get("assigned_name"), "field": "assigned"})
     # Track where the lead was before entering follow_up so we can restore it later
     if body.status == "follow_up" and old_status != "follow_up":
         update["pre_followup_status"] = old_status
