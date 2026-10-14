@@ -82,6 +82,7 @@ const CITY_TABS = [
 ];
 
 function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim, claiming, canOpen }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [taken, setTaken] = useState("all");
   const [region, setRegion] = useState("all");
@@ -170,7 +171,7 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
                   </td>
                   {onClaim && (
                     <td className="px-4 py-3 text-right">
-                      {!r.assigned_to && (
+                      {!r.assigned_to && user?.role !== "admin" && (
                         <Button size="sm" className="rounded-xl" disabled={claiming}
                           onClick={(e) => { e.stopPropagation(); onClaim(r.id); }}>
                           <UserPlus className="mr-1 h-4 w-4" /> Assign to me
