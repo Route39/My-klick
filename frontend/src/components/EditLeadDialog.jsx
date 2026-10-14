@@ -48,6 +48,21 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           <DialogTitle className="font-display text-2xl">Edit Lead</DialogTitle>
         </DialogHeader>
         <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+          <Field label="Segment">
+            <RadioGroup
+              data-testid="edit-segment"
+              value={form.segment}
+              onValueChange={(v) => setForm((f) => ({ ...f, segment: v, status: (v === "driver" ? DRIVER_STAGES : STAGES)[0] }))}
+              className="flex gap-6"
+            >
+              {[["investor", "Investor"], ["driver", "Driver"]].map(([v, l]) => (
+                <div key={v} className="flex items-center gap-2">
+                  <RadioGroupItem value={v} id={`seg-${v}`} />
+                  <Label htmlFor={`seg-${v}`} className="cursor-pointer">{l}</Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </Field>
           <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
