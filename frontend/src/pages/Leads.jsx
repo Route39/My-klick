@@ -167,7 +167,7 @@ export default function Leads({ segment = "" }) {
       ) : view === "list" ? (
         <LeadList leads={leads} segment={segment} />
       ) : view === "cards" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 d1600:grid-cols-5">
           {leads.map((l, i) => <LeadCard key={l.id} lead={l} index={i} />)}
         </div>
       ) : (

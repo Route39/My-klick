@@ -38,7 +38,7 @@ export default function DriverCustomers({ segment = "driver" }) {
       {isLoading ? <ListSkeleton count={4} /> : data.length === 0 ? (
         <EmptyState icon={Trophy} title="No converted drivers yet." subtitle="Drivers whose status is Converted will appear here." testid="customers-empty" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 d1440:grid-cols-4">
           {data.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.3) }}
               data-testid={`customer-card-${c.id}`}

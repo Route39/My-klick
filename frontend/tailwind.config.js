@@ -6,6 +6,13 @@ module.exports = {
     "./public/index.html"
   ],
   theme: {
+    screens: {
+      m375: '375px', m425: '425px', sm: '640px',
+      md: '768px', t992: '992px', lg: '1024px',
+      d1200: '1200px', xl: '1280px', d1360: '1360px',
+      d1440: '1440px', '2xl': '1536px', d1540: '1540px',
+      d1600: '1600px', d1920: '1920px',
+    },
     extend: {
       borderRadius: {
         lg: 'var(--radius)',

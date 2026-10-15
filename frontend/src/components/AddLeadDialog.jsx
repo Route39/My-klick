@@ -66,7 +66,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
             <Input data-testid="lead-name-input" value={form.name} onChange={(e) => set("name")(e.target.value)}
               placeholder="Kumar Traders" className="rounded-xl" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone</Label>
               <Input data-testid="lead-phone-input" value={form.phone} onChange={(e) => set("phone")(e.target.value)}
@@ -78,7 +78,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 placeholder="Optional" className="rounded-xl" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Source</Label>
               <Select value={form.source} onValueChange={set("source")}>
@@ -94,7 +94,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 placeholder="₹" className="rounded-xl" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>No of vehicles</Label>
               <Input data-testid="lead-vehicles-input" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)}
@@ -110,7 +110,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>City</Label>
               <Input data-testid="lead-city-input" value={form.location} onChange={(e) => set("location")(e.target.value)}

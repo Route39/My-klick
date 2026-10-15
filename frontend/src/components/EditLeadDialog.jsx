@@ -73,11 +73,11 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           </Field>
           {isDriver ? (<>
           <Field label="Driver Name"><Input value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Phone Number"><Input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-2 pt-1">
               <Label>License Available?</Label>
               <RadioGroup value={form.rc || "yes"} onValueChange={set("rc")} className="flex gap-4 mt-1">
@@ -87,7 +87,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             </div>
             <DocField label="Aadhaar Card" url={form.aadhaar_url} onFile={(f) => setFiles((x) => ({ ...x, aadhaar: f }))} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <DocField label="PAN Card" url={form.pan_url} onFile={(f) => setFiles((x) => ({ ...x, pan: f }))} />
             <DocField label="Original License" url={form.license_url} onFile={(f) => setFiles((x) => ({ ...x, license: f }))} />
           </div>
@@ -99,15 +99,15 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           </Field>
           </>) : (<>
           <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Email"><Input value={form.email} onChange={(e) => set("email")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Source">
               <Select value={form.source} onValueChange={set("source")}>
                 <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
@@ -122,7 +122,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
               </Select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Cash value (₹)"><Input data-testid="edit-value" type="number" value={form.value} onChange={(e) => set("value")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="No of vehicles"><Input data-testid="edit-vehicles" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)} className="rounded-xl" /></Field>
           </div>
@@ -135,7 +135,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             </Field>
             */}
           </>)}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Assigned to">
               <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
                 <SelectTrigger data-testid="edit-assign" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>

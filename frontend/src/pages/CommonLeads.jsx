@@ -144,7 +144,7 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
         <EmptyState icon={Inbox} title="No common leads" subtitle="Nothing matches these filters." />
       ) : (
         <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Lead</th><th className="px-4 py-3">State / City</th>

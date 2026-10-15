@@ -95,7 +95,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             <Input className="rounded-xl" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Ramesh Kumar" />
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone Number</Label>
               <Input type="tel" className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. 9876543210" />
@@ -106,7 +106,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-2 pt-1">
               <Label>License Available?</Label>
               <RadioGroup value={formData.rc} onValueChange={(v) => setFormData({ ...formData, rc: v })} className="flex gap-4 mt-1">
@@ -126,7 +126,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pb-4">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2 pb-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-500">PAN Card</Label>
               <Input type="file" className="rounded-xl text-xs" onChange={(e) => setFiles({ ...files, pan: e.target.files[0] })} accept="image/*,.pdf" />

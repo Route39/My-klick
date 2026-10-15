@@ -87,7 +87,7 @@ function AddTeamMemberModal({ onSuccess }) {
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email <span className="text-slate-400 font-normal">(Optional)</span></Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@company.com" className="rounded-xl border-slate-200" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
                 <Select value={location} onValueChange={setLocation}>
@@ -108,7 +108,7 @@ function AddTeamMemberModal({ onSuccess }) {
                 <Input type="date" value={joiningDate} onChange={e => setJoiningDate(e.target.value)} className="rounded-xl border-slate-200" required />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Role</Label>
                 <Select value={role} onValueChange={setRole}>
@@ -203,7 +203,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
                 <Select value={location} onValueChange={setLocation}>
@@ -253,7 +253,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
               <Stat value={staff.leads} label="Total Leads" />
               <Stat value={staff.converted} label="Converted" accent />
             </div>
@@ -313,7 +313,7 @@ export default function Team() {
       </div>
 
       {isLoading ? <ListSkeleton count={4} /> : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 d1440:grid-cols-4">
           {data.filter((m, idx, arr) => arr.findIndex(x => (x.id || x.email || x.phone) === (m.id || m.email || m.phone)) === idx).map((m, i) => {
             const rank = RANK[i];
             return (
