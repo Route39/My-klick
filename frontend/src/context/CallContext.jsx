@@ -41,7 +41,7 @@ export function CallProvider({ children }) {
     setConnecting(true);
     try {
       const { data } = await api.post('/exotel/manual_call', { from_number, to_number, segment });
-      setCallId(data.call_id);
+      setCallId(data.id);
       setLead({ id: "manual", name: "Manual Call", phone: to_number });
       setSeconds(0);
       setMuted(false);
@@ -66,7 +66,10 @@ export function CallProvider({ children }) {
       }, 1000);
       
       // Real-time Poller for Exotel Status
+      let busy = false;
       poller.current = setInterval(async () => {
+        if (busy) return;
+        busy = true;
         try {
           const { data } = await api.get(`/calls/${callId}/sync`);
           const status = data.status || "ringing";
@@ -88,8 +91,8 @@ export function CallProvider({ children }) {
           }
         } catch (e) {
           // Ignore polling errors
-        }
-      }, 800);
+        } finally { busy = false; }
+      }, 3000);
       
       return () => {
         clearInterval(timer.current);

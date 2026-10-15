@@ -114,7 +114,7 @@ function Row({ f, i, onComplete, onReschedule, onDelete, onOpen, onEdit }) {
           <button data-testid={`call-followup-${f.id}`} onClick={() => startCall({ id: f.lead_id, name: f.lead_name, phone: f.lead_phone })}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
           
-          <button data-testid={`whatsapp-followup-${f.id}`} onClick={async () => { await api.post(`/leads/${f.lead_id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); }}
+          <button data-testid={`whatsapp-followup-${f.id}`} onClick={async () => { try { await api.post(`/leads/${f.lead_id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); } catch (err) { toast.error(err.response?.data?.detail || "WhatsApp not sent"); } }}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 active:scale-90"><MessageCircle className="h-4 w-4" /></button>
 
           <button data-testid={`edit-followup-${f.id}`} onClick={(e) => { e.stopPropagation(); onEdit(); }}

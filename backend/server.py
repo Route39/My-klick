@@ -143,6 +143,8 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"id": payload["sub"]})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("active") is False:
+            raise HTTPException(status_code=401, detail="Account deactivated")
         return clean(user)
     except Exception as e:
         import traceback
@@ -285,7 +287,9 @@ async def log_activity(atype: str, lead: dict, user: dict, text: str, meta: dict
 # Auth endpoints
 # ---------------------------------------------------------------------------
 @api.post("/auth/register")
-async def register(body: RegisterIn):
+async def register(body: RegisterIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
     email = body.email.lower().strip() if body.email else ""
     if email:
         if await db.users.find_one({"email": email}):
@@ -306,6 +310,8 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"$or": [{"email": username}, {"phone": username}]})
     if not user or not verify_password(body.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid username, email or password")
+    if user.get("active") is False:
+        raise HTTPException(status_code=403, detail="Your account is deactivated. Contact admin.")
     
     user_id = user.get("id")
     if not user_id:
@@ -333,7 +339,7 @@ async def logout(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 @api.get("/users")
 async def list_users(user: dict = Depends(get_current_user)):
-    users = await db.users.find({"organization_id": org_of(user)}).to_list(200)
+    users = await db.users.find({"organization_id": org_of(user), "active": {"$ne": False}}).to_list(200)
     return [clean(u) for u in users]
 
 @api.post("/team")
@@ -341,7 +347,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
     if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    existing = await db.users.find_one({"phone": body.phone.strip()})
+    existing = body.phone.strip() and await db.users.find_one({"phone": body.phone.strip()})
     if existing:
         raise HTTPException(status_code=400, detail="A user with this phone/username already exists.")
         
@@ -361,8 +367,72 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
         raise HTTPException(status_code=403, detail="Not authorized")
     
     target_user = await db.users.find_one({"id": user_id, "organization_id": org_of(user)})
+    _left = await db.leads.count_documents({"assigned_to": user_id, "organization_id": org_of(user)})
+    if _left:
+        raise HTTPException(status_code=400, detail=f"Transfer this staff's {_left} leads first")
     if target_user:
         await db.users.delete_one({"id": user_id, "organization_id": org_of(user)})
+    return {"ok": True}
+
+class TransferIn(BaseModel):
+    lead_ids: List[str]
+    to_user_ids: List[str]
+
+class ActiveIn(BaseModel):
+    active: bool
+
+@api.post("/team/{user_id}/transfer")
+async def transfer_leads(user_id: str, body: TransferIn, user: dict = Depends(get_current_user)):
+    """Move selected leads of one staff to one or more staff (equal split, round-robin)."""
+    if not can_view_all(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    org = org_of(user)
+    src = await db.users.find_one({"id": user_id, "organization_id": org})
+    if not src:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    order = {uid: i for i, uid in enumerate(body.to_user_ids)}
+    targets = await db.users.find({"id": {"$in": body.to_user_ids}, "organization_id": org,
+                                   "active": {"$ne": False}}).to_list(100)
+    targets = sorted([t for t in targets if t["id"] != user_id], key=lambda t: order.get(t["id"], 0))
+    if not targets:
+        raise HTTPException(status_code=400, detail="Select at least one active staff")
+    leads = await db.leads.find({"id": {"$in": body.lead_ids}, "organization_id": org, "assigned_to": user_id},
+                                {"_id": 0, "id": 1, "name": 1}).to_list(5000)
+    if not leads:
+        raise HTTPException(status_code=400, detail="No leads selected")
+    buckets = {t["id"]: [] for t in targets}
+    for i, l in enumerate(leads):
+        buckets[targets[i % len(targets)]["id"]].append(l)
+    now = now_iso()
+    summary = []
+    for t in targets:
+        ls = buckets[t["id"]]
+        if not ls:
+            continue
+        ids, tname = [l["id"] for l in ls], t.get("name", "")
+        await db.leads.update_many({"id": {"$in": ids}}, {"$set": {"assigned_to": t["id"], "assigned_name": tname, "updated_at": now}})
+        await db.followups.update_many({"lead_id": {"$in": ids}, "status": "pending"},
+                                       {"$set": {"assigned_to": t["id"], "assigned_name": tname, "updated_at": now}})
+        await db.customers.update_many({"lead_id": {"$in": ids}}, {"$set": {"assigned_to": t["id"], "assigned_name": tname}})
+        await db.activities.insert_many([{
+            "id": str(uuid.uuid4()), "type": "edit", "organization_id": org, "lead_id": l["id"], "lead_name": l.get("name"),
+            "user_id": user["id"], "user_name": user.get("name"), "user_avatar": None,
+            "text": f"transferred lead {src.get('name', '')} → {tname}",
+            "meta": {"field": "assigned", "from": src.get("name"), "to": tname}, "created_at": now} for l in ls])
+        summary.append({"to": tname, "count": len(ls)})
+    return {"ok": True, "moved": len(leads), "summary": summary}
+
+@api.put("/team/{user_id}/active")
+async def set_team_active(user_id: str, body: ActiveIn, user: dict = Depends(get_current_user)):
+    if not can_view_all(user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
+    if not body.active:
+        left = await db.leads.count_documents({"assigned_to": user_id, "organization_id": org_of(user)})
+        if left:
+            raise HTTPException(status_code=400, detail=f"Transfer this staff's {left} leads first")
+    await db.users.update_one({"id": user_id, "organization_id": org_of(user)}, {"$set": {"active": body.active}})
     return {"ok": True}
 
 @api.put("/team/{user_id}")
@@ -377,6 +447,8 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales"
     }
     
+    if not can_view_all(user):
+        update_data.pop("role", None)  # staff cannot change their own role
     await db.users.update_one(
         {"id": user_id, "organization_id": org_of(user)},
         {"$set": update_data}
@@ -595,7 +667,7 @@ async def team_performance(user: dict = Depends(get_current_user)):
         rate = round((converted / total) * 100) if total else 0
         out.append({
             "id": u_id, "name": u.get("name", "Unknown"), "role": u.get("role", "sales"), "avatar": u.get("avatar"),
-            "phone": u.get("phone", ""), "email": u.get("email", ""),
+            "phone": u.get("phone", ""), "email": u.get("email", ""), "location": u.get("location", ""), "joining_date": u.get("joining_date", ""), "active": u.get("active", True),
             "leads": total, "contacted": contacted, "converted": converted,
             "value": value, "conversion_rate": rate,
         })
@@ -640,9 +712,14 @@ async def list_leads(
             {"phone": {"$regex": q, "$options": "i"}},
         ]
     leads = await db.leads.find(scope_leads(user, base, pool=True)).sort("updated_at", -1).to_list(2000)
+    _fus = {}
+    if leads:
+        async for _f in db.followups.find({"lead_id": {"$in": [l["id"] for l in leads]}, "status": "pending"}, {"_id": 0}):
+            _fus.setdefault(_f["lead_id"], []).append(_f)
     out = []
     for l in leads:
         l["inactive"] = lead_inactive(l)
+        l["pending_followups"] = _fus.get(l["id"], [])
         out.append(clean(l))
     return out
 
@@ -896,7 +973,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         with open("driver_error.log", "a") as f:
             f.write("ERROR:\n")
             f.write(traceback.format_exc() + "\n")
-        raise HTTPException(status_code=400, detail=f"Server error: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=400, detail="Could not save. Please try again.")
 @api.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_current_user)):
     lead = await lead_or_403(lead_id, user)
@@ -905,6 +982,9 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
         assigned = await db.users.find_one({"id": body.assigned_to})
     update = body.model_dump()
     update.pop("is_common", None)
+    for _k in ("region", "language", "city", "state", "rc", "aadhaar_url", "pan_url", "license_url"):
+        if _k not in body.model_fields_set:
+            update.pop(_k, None)  # not sent by the form -> keep existing value
     update["assigned_name"] = assigned["name"] if assigned else None
     update["whatsapp"] = body.whatsapp or body.phone
     update["phone_norm"] = norm_phone(body.phone)
@@ -939,6 +1019,10 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
         await log_activity("edit", lead, user, "changed priority",
                            {"from": lead.get("priority"), "to": body.priority, "field": "priority"})
 
+    if body.status != old_status and "converted" in (body.status, old_status):
+        # Route conversion through the stage logic so the Customer record + activity are created/removed
+        await db.leads.update_one({"id": lead_id}, {"$set": {"status": old_status}})
+        await change_stage(lead_id, StageIn(status=body.status), user)
     new = await db.leads.find_one({"id": lead_id})
     if new.get("status") == "follow_up" and lead.get("status") != "follow_up":
         await maybe_auto_schedule_followup(new, user)
@@ -1005,6 +1089,8 @@ async def maybe_auto_schedule_followup(lead: dict, user: dict):
 
 @api.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
+    if not can_view_all(user):
+        raise HTTPException(status_code=403, detail="Only Admin / Team Leader can delete leads")
     await lead_or_403(lead_id, user)
     await db.leads.delete_one({"id": lead_id})
     await db.activities.delete_many({"lead_id": lead_id})
@@ -1882,12 +1968,13 @@ async def list_followups(scope: str = "all", segment: Optional[str] = None, user
     if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
-        leads = await db.leads.find({"segment": seg_match(segment)}).to_list(None)
+        leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
         lead_ids = [l["id"] for l in leads]
         base["lead_id"] = {"$in": lead_ids}
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
-    _fu_ok = {l["id"] for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"}).to_list(None)}
-    fs = [f for f in fs if f.get("lead_id") in _fu_ok]
+    _fu_map = {l["id"]: l for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"},
+               {"_id": 0, "id": 1, "name": 1, "phone": 1, "value": 1, "status": 1}).to_list(None)}
+    fs = [f for f in fs if f.get("lead_id") in _fu_map]
     now = datetime.now(timezone.utc)
     out = []
     for f in fs:
@@ -1905,11 +1992,7 @@ async def list_followups(scope: str = "all", segment: Optional[str] = None, user
         item["overdue"] = overdue
         item["today"] = today
         # Enrich with lead data — and SKIP if lead is no longer in follow_up status
-        lead = await db.leads.find_one({"id": f["lead_id"]})
-        if not lead or lead.get("status") != "follow_up":
-            # Clean up the stale follow-up record from the database
-            await db.followups.delete_one({"id": f["id"]})
-            continue
+        lead = _fu_map[f["lead_id"]]
         item["lead_phone"] = lead.get("phone")
         item["lead_value"] = lead.get("value")
         item["lead_status"] = lead.get("status")
@@ -1989,7 +2072,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
     if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
-        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
+        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
         base["lead_id"] = {"$in": [l["id"] for l in seg_leads]}
     
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
@@ -2100,7 +2183,7 @@ async def activities(limit: int = 20, segment: Optional[str] = None, user: dict 
     if not can_view_all(user):
         q["user_id"] = user["id"]
     if segment:
-        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}).to_list(None)
+        seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
         seg_lead_ids = [l["id"] for l in seg_leads]
         q["lead_id"] = {"$in": seg_lead_ids}
     acts = await db.activities.find(q).sort("created_at", -1).to_list(limit)
@@ -2416,11 +2499,11 @@ async def startup():
         pass
 
     try:
-        await db.users.create_index("phone", unique=True, partialFilterExpression={"phone": {"$type": "string"}})
+        await db.users.create_index("phone", unique=True, partialFilterExpression={"phone": {"$gt": ""}})
     except Exception:
         pass
     try:
-        await db.users.create_index("email", unique=True, sparse=True)
+        await db.users.create_index("email", unique=True, partialFilterExpression={"email": {"$gt": ""}})
     except Exception:
         pass
     try:
@@ -2439,6 +2522,23 @@ async def startup():
         await db.messages.create_index("provider_message_id")
     except Exception:
         pass
+    for _c, _k in [("users", "id"), ("leads", [("organization_id", 1), ("phone_norm", 1)]),
+                   ("leads", "assigned_to"), ("leads", [("organization_id", 1), ("is_common", 1), ("created_at", -1)]),
+                   ("leads", "segment"), ("leads", [("updated_at", -1)]),
+                   ("followups", [("organization_id", 1), ("status", 1), ("due_at", 1)]),
+                   ("followups", "lead_id"), ("followups", "assigned_to"),
+                   ("activities", [("lead_id", 1), ("created_at", -1)]), ("activities", [("organization_id", 1), ("created_at", -1)]),
+                   ("calls", [("lead_id", 1), ("created_at", -1)]), ("calls", [("organization_id", 1), ("created_at", -1)]),
+                   ("messages", [("lead_id", 1), ("created_at", 1)]), ("messages", [("direction", 1), ("created_at", 1)]),
+                   ("messages", [("direction", 1), ("read", 1)]),
+                   ("exo_calls", "sid"), ("exo_calls", [("start_time", -1)]), ("exo_calls", "from_number"),
+                   ("exo_calls", "to_number"), ("exo_calls", "claimed_by"),
+                   ("customers", "lead_id"), ("customers", [("organization_id", 1), ("converted_at", -1)]),
+                   ("notes", [("organization_id", 1), ("created_at", -1)])]:
+        try:
+            await db[_c].create_index(_k)
+        except Exception as _e:
+            logger.warning("index %s %s: %s", _c, _k, _e)
         
     await seed_admin()
     # Demo team + demo leads only when explicitly enabled (never on live)

@@ -83,7 +83,10 @@ export function WhatsAppNotifier({ intervalMs = 5000 }) {
 
   useEffect(() => {
     let alive = true;
+    let busy = false;
     const tick = async () => {
+      if (busy) return;
+      busy = true;
       try {
         const { data } = await api.get("/whatsapp/latest", { params: { since: sinceRef.current } });
         if (!alive || !data) return;
@@ -117,7 +120,7 @@ export function WhatsAppNotifier({ intervalMs = 5000 }) {
           });
           pendingRef.current.set(m.lead_id, tid);
         });
-      } catch (_) {}
+      } catch (_) {} finally { busy = false; }
     };
     const id = setInterval(tick, intervalMs);
     return () => { alive = false; clearInterval(id); stopRing(); };

@@ -79,7 +79,10 @@ export function CommonLeadsNotifier({ intervalMs = 15000 }) {
 
   useEffect(() => {
     let alive = true;
+    let busy = false;
     const tick = async () => {
+      if (busy) return;
+      busy = true;
       try {
         const { data } = await api.get("/common-leads/latest", { params: { since: sinceRef.current } });
         if (!alive || !data?.length) return;
@@ -99,7 +102,7 @@ export function CommonLeadsNotifier({ intervalMs = 15000 }) {
             onDismiss: () => { activeRef.current.delete(l.id); if (!activeRef.current.size) stopRing(); },
           });
         });
-      } catch (_) { /* ignore network blips */ }
+      } catch (_) { /* ignore network blips */ } finally { busy = false; }
     };
     const id = setInterval(tick, intervalMs);
     return () => { alive = false; clearInterval(id); stopRing(); };
