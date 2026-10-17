@@ -706,6 +706,7 @@ async def list_leads(
     if assigned_to and can_view_all(user):
         base["assigned_to"] = assigned_to
     if q:
+        q = re.escape(q.strip())
         base["$or"] = [
             {"name": {"$regex": q, "$options": "i"}},
             {"company": {"$regex": q, "$options": "i"}},
@@ -1089,9 +1090,9 @@ async def maybe_auto_schedule_followup(lead: dict, user: dict):
 
 @api.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
-    if not can_view_all(user):
-        raise HTTPException(status_code=403, detail="Only Admin / Team Leader can delete leads")
-    await lead_or_403(lead_id, user)
+    lead = await lead_or_403(lead_id, user)  # staff: own + unassigned/common leads only
+    await db.deleted_leads.insert_one({**{k: v for k, v in lead.items() if k != "_id"},
+                                       "deleted_by": user.get("id"), "deleted_by_name": user.get("name"), "deleted_at": now_iso()})
     await db.leads.delete_one({"id": lead_id})
     await db.activities.delete_many({"lead_id": lead_id})
     await db.calls.delete_many({"lead_id": lead_id})
@@ -1746,7 +1747,7 @@ async def exophones_calls(q: str = "", direction: str = "", limit: int = 25, ski
     if direction in ("incoming", "outgoing"):
         f["direction"] = direction
     if q:
-        rx = {"$regex": q.strip(), "$options": "i"}
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         f["$or"] = [{"from_number": rx}, {"to_number": rx}, {"lead_name": rx}, {"sid": rx}, {"caller_name": rx}]
     total = await db.exo_calls.count_documents(f)
     rows = await db.exo_calls.find(f, {"_id": 0}).sort("start_time", -1).skip(max(skip, 0)).limit(min(limit, 1000)).to_list(min(limit, 1000))
@@ -1958,6 +1959,7 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
     _fu_set = {"status": "follow_up", "next_followup": body.due_at, "updated_at": now_iso()}
     if lead.get("status") != "follow_up":
         _fu_set["status_changed_at"] = now_iso()
+        _fu_set["pre_followup_status"] = lead.get("status")
     await db.leads.update_one({"id": lead_id}, {"$set": _fu_set})
     await log_activity("followup_created", lead, user, "scheduled a follow-up", {"due_at": body.due_at})
     return clean(fu)
@@ -2094,7 +2096,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
     if segment:
         lead_scope["segment"] = seg_match(segment)
     lead_scope = scope_leads(user, lead_scope)
-    high_leads = await db.leads.find(lead_scope).to_list(500)
+    high_leads = await db.leads.find(lead_scope, {"_id": 0, "id": 1}).to_list(500)
 
     # Prioritise: overdue -> today -> high-priority interested leads.
     picks = []
@@ -2118,27 +2120,26 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
             "last_call": f"{lc['duration_seconds']//60}m {lc['duration_seconds']%60}s" if lc and lc.get("duration_seconds") else None,
         }
 
-    for _, f in overdue + today_only:
+    cands = []
+    for _d, f in overdue + today_only:
+        if len(cands) >= 12:
+            break
         if f["lead_id"] in seen:
             continue
         seen.add(f["lead_id"])
-        item = await enrich(f["lead_id"], f)
-        if item:
-            item["bucket"] = "overdue" if (_, f) in overdue else "today"
-            picks.append(item)
-        if len(picks) >= 8:
+        cands.append((f["lead_id"], f, "overdue" if _d < now else "today"))
+    for lead in high_leads:
+        if len(cands) >= 12:
             break
-    if len(picks) < 8:
-        for lead in high_leads:
-            if lead["id"] in seen:
-                continue
-            seen.add(lead["id"])
-            item = await enrich(lead["id"])
-            if item:
-                item["bucket"] = "high"
-                picks.append(item)
-            if len(picks) >= 8:
-                break
+        if lead["id"] in seen:
+            continue
+        seen.add(lead["id"])
+        cands.append((lead["id"], None, "high"))
+    results = await asyncio.gather(*[enrich(lid, fu) for lid, fu, _b in cands])
+    for (lid, fu, b), item in zip(cands, results):
+        if item and len(picks) < 8:
+            item["bucket"] = b
+            picks.append(item)
 
     return {
         "user_name": user.get("name"),
@@ -2193,7 +2194,7 @@ async def activities(limit: int = 20, segment: Optional[str] = None, user: dict 
 async def search(q: str, segment: str = "", user: dict = Depends(get_current_user)):
     if not q or len(q) < 1:
         return {"leads": [], "customers": []}
-    regex = {"$regex": q, "$options": "i"}
+    regex = {"$regex": re.escape(q.strip()), "$options": "i"}
     lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]}, pool=True)
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
     if segment:
@@ -2213,7 +2214,7 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
     base = {"is_common": {"$ne": True}}
     if segment:
         base["segment"] = seg_match(segment)
-    all_leads = await db.leads.find(scope_leads(user, base)).to_list(5000)
+    all_leads = await db.leads.find(scope_leads(user, base), {"_id": 0, "id": 1, "created_at": 1, "status": 1, "source": 1, "updated_at": 1, "converted_at": 1}).to_list(5000)
     lead_ids = [l["id"] for l in all_leads]
     now = datetime.now(timezone.utc)
     today = today_ist()
@@ -2232,13 +2233,13 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
         loose["segment"] = seg_match(segment)
     if not can_view_all(user):
         loose["user_id"] = user["id"]
-    calls = await db.calls.find({"$or": [{"lead_id": {"$in": lead_ids}}, loose]}).to_list(5000)
+    calls = await db.calls.find({"$or": [{"lead_id": {"$in": lead_ids}}, loose]}, {"_id": 0, "status": 1}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
     fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}
     if not can_view_all(user):
         fu_base["assigned_to"] = user["id"]
-    followups = await db.followups.find(fu_base).to_list(2000)
+    followups = await db.followups.find(fu_base, {"_id": 0, "lead_id": 1, "due_at": 1}).to_list(2000)
     _fu_ok = {l["id"] for l in all_leads if l.get("status") == "follow_up"}
     followups = [f for f in followups if f.get("lead_id") in _fu_ok]
     fu_today = 0

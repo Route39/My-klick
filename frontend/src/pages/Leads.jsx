@@ -196,7 +196,7 @@ function LeadList({ leads, segment }) {
       {leads.map((l, i) => (
         <motion.div key={l.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}
           data-testid={`lead-row-${l.id}`} onClick={() => navigate(segment === "driver" ? `/drivers/leads/${l.id}` : `/leads/${l.id}`)}
-          className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
+          className="flex flex-wrap sm:flex-nowrap cursor-pointer items-center gap-3 sm:gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
           <Avatar name={l.name} size={46} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -215,7 +215,7 @@ function LeadList({ leads, segment }) {
           <div className="hidden w-28 shrink-0 items-center gap-1 text-xs font-medium text-amber-600 xl:flex">
             {l.next_followup && (<><Clock className="h-3 w-3" /> {formatDay(l.next_followup)}</>)}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full sm:w-auto shrink-0 items-center justify-end gap-1.5 border-t border-slate-100 pt-2.5 sm:border-0 sm:pt-0">
             <button data-testid={`row-call-${l.id}`} onClick={(e) => { e.stopPropagation(); startCall(l); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
             <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); try { await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); } catch (err) { toast.error(err.response?.data?.detail || "WhatsApp not sent"); } }}
