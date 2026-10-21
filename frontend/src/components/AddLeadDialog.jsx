@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -45,7 +45,15 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
   const phoneDigits = form.phone.replace(/\D/g, "");
-  const canSubmit = form.name.trim().length > 0 && phoneDigits.length >= 10;
+  const [dup, setDup] = useState(null);
+  useEffect(() => {
+    if (phoneDigits.length < 10) { setDup(null); return; }
+    const t = setTimeout(async () => {
+      try { const r = (await api.get(`/leads-check-phone?phone=${phoneDigits}&segment=${segment}`)).data; setDup(r.exists ? r : null); } catch (e) { setDup(null); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [phoneDigits, segment]);
+  const canSubmit = form.name.trim().length > 0 && phoneDigits.length >= 10 && !dup;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,7 +139,8 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
             <Input data-testid="lead-remarks-input" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)}
               placeholder="Any additional remarks..." className="rounded-xl" />
           </div>
-          {!canSubmit && <p className="text-xs text-slate-400 text-center">Enter name and a valid 10-digit phone to continue</p>}
+          {dup && <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-600">This lead already taken by <b>{dup.owner}</b> — {dup.name} ({dup.segment})</p>}
+          {!canSubmit && !dup && <p className="text-xs text-slate-400 text-center">Enter name and a valid 10-digit phone to continue</p>}
           <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending || !canSubmit}
             className="w-full rounded-xl py-6 text-base font-semibold">
             {create.isPending ? "Creating…" : "Create Lead"}

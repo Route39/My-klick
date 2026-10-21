@@ -26,6 +26,15 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
   });
 
   const [isUploading, setIsUploading] = useState(false);
+  const [dup, setDup] = useState(null);
+  const phoneDigits = (formData.phone || "").replace(/\D/g, "");
+  useEffect(() => {
+    if (phoneDigits.length < 10) { setDup(null); return; }
+    const t = setTimeout(async () => {
+      try { const r = (await api.get(`/leads-check-phone?phone=${phoneDigits}&segment=driver`)).data; setDup(r.exists ? r : null); } catch (e) { setDup(null); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [phoneDigits]);
 
   useEffect(() => {
     if (open) {
@@ -149,7 +158,8 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             <textarea rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} placeholder="Any notes about this driver..." />
           </div>
 
-          <Button data-testid="create-driver-submit" type="submit" disabled={isUploading || addLead.isPending}
+          {dup && <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-600">This lead already taken by <b>{dup.owner}</b> — {dup.name} ({dup.segment})</p>}
+          <Button data-testid="create-driver-submit" type="submit" disabled={isUploading || addLead.isPending || !!dup}
             className="w-full rounded-xl py-6 text-base font-semibold">
             {isUploading || addLead.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {isUploading ? "Uploading…" : "Add Driver"}

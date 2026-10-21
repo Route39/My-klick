@@ -128,14 +128,16 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
           </button>
         ))}
         <select value={region} onChange={(e) => setRegion(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm">
+          className="cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white bg-no-repeat bg-[length:16px] bg-[position:right_0.75rem_center] py-1.5 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")` }}>
           <option value="all">All States</option>
           {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Filter by city..."
           className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm" />
         <select value={lang} onChange={(e) => setLang(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm">
+          className="cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white bg-no-repeat bg-[length:16px] bg-[position:right_0.75rem_center] py-1.5 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")` }}>
           <option value="all">All Languages</option>
           {LANGS.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>

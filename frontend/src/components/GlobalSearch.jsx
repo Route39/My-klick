@@ -24,7 +24,7 @@ export function GlobalSearch({ open, onOpenChange, segment }) {
   const go = (path) => { onOpenChange(false); setQ(""); navigate(path); };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog shouldFilter={false} open={open} onOpenChange={onOpenChange}>
       <CommandInput data-testid="global-search-input" placeholder="Search MyKlick — leads, customers, phone…"
         value={q} onValueChange={setQ} />
       <CommandList>

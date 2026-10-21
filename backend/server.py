@@ -167,7 +167,16 @@ async def find_lead_by_phone(number: str, org: str = DEFAULT_ORG):
     last10 = norm_phone(number)
     if not last10:
         return None
-    return await db.leads.find_one({"organization_id": org, "phone_norm": last10})
+    leads = await db.leads.find({"organization_id": org, "phone_norm": last10}).to_list(10)
+    if len(leads) <= 1:
+        return leads[0] if leads else None
+    # Same number in investor + driver: reply goes to the lead we last messaged
+    last = await db.messages.find_one({"lead_id": {"$in": [l["id"] for l in leads]}, "direction": {"$ne": "incoming"}}, sort=[("created_at", -1)])
+    if last:
+        for l in leads:
+            if l["id"] == last["lead_id"]:
+                return l
+    return max(leads, key=lambda l: l.get("updated_at") or "")
 
 async def log_integration(kind: str, meta: dict):
     """Server-side integration log for debugging (never stores secrets)."""
@@ -449,6 +458,10 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
     
     if not can_view_all(user):
         update_data.pop("role", None)  # staff cannot change their own role
+    if update_data["phone"]:
+        _other = await db.users.find_one({"phone": update_data["phone"], "id": {"$ne": user_id}})
+        if _other:
+            raise HTTPException(status_code=409, detail=f"This phone number is already used by {_other.get('name') or 'another user'}")
     await db.users.update_one(
         {"id": user_id, "organization_id": org_of(user)},
         {"$set": update_data}
@@ -899,6 +912,20 @@ async def get_lead_metadata(lead_id: str, user: dict = Depends(get_current_user)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+@api.get("/leads-check-phone")
+async def check_lead_phone(phone: str, segment: str = "", user: dict = Depends(get_current_user)):
+    _n = norm_phone(phone)
+    if len(_n) < 10:
+        return {"exists": False}
+    _cq = {"organization_id": org_of(user), "$or": [{"phone_norm": _n}, {"phone": {"$regex": re.escape(_n) + "$"}}]}
+    if segment:
+        _cq["segment"] = seg_match(segment)
+    _dup = await db.leads.find_one(_cq)
+    if not _dup:
+        return {"exists": False}
+    _who = _dup.get("assigned_name") or ("Common Leads (not taken)" if _dup.get("is_common") else "Unassigned")
+    return {"exists": True, "name": _dup.get("name", ""), "owner": _who, "segment": _dup.get("segment") or "investor"}
+
 @api.post("/leads")
 async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
     # Duplicate check: same phone number already in leads -> block
@@ -907,6 +934,8 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         _q = {"organization_id": org_of(user), "$or": [{"phone_norm": _n}]}
         if len(_n) == 10:
             _q["$or"].append({"phone": {"$regex": re.escape(_n) + "$"}})
+        if body.segment:
+            _q["segment"] = seg_match(body.segment)
         _dup = await db.leads.find_one(_q)
         if _dup:
             _who = _dup.get("assigned_name") or ("Common Leads (not taken)" if _dup.get("is_common") else "Unassigned")
