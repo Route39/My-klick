@@ -33,7 +33,7 @@ export default function Customers({ segment = "" }) {
       {isLoading ? <ListSkeleton count={4} /> : data.length === 0 ? (
         <EmptyState icon={Trophy} title="Your first conversion is waiting." subtitle="Convert a lead to see your customers appear here." testid="customers-empty" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 d1440:grid-cols-4">
           {data.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.2) }}
               onClick={() => navigate(segment === "driver" ? `/drivers/customers/${c.id}` : `/customers/${c.id}`)}

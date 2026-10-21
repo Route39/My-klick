@@ -9,7 +9,7 @@ import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
 import { EmptyState } from "@/components/EmptyState";
 import { ListSkeleton } from "@/components/Skeletons";
-import { STAGES, STATUS_META, formatINR, formatClock, formatDay } from "@/lib/constants";
+import { DRIVER_STAGES as STAGES, STATUS_META, formatINR, formatClock, formatDay } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -81,7 +81,7 @@ export default function DriverLeads({ segment = "driver" }) {
       ) : view === "list" ? (
         <LeadList leads={leads} />
       ) : view === "cards" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 d1600:grid-cols-5">
           {leads.map((l, i) => <LeadCard key={l.id} lead={l} index={i} />)}
         </div>
       ) : (
@@ -110,12 +110,12 @@ function LeadList({ leads }) {
       {leads.map((l, i) => (
         <motion.div key={l.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}
           data-testid={`lead-row-${l.id}`} onClick={() => navigate(`/drivers/leads/${l.id}`)}
-          className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
+          className="flex flex-wrap sm:flex-nowrap cursor-pointer items-center gap-3 sm:gap-4 rounded-2xl border border-slate-200/70 bg-white p-3.5 transition hover:border-primary/30 hover:shadow-md sm:p-4">
           <Avatar name={l.name} size={46} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate font-display font-semibold text-slate-900">{l.name}</span>
-              <PriorityBadge priority={l.priority} />
+              {/* <PriorityBadge priority={l.priority} /> */}
             </div>
             <div className="mt-0.5 flex items-center gap-3 text-xs text-slate-400">
               <span>{l.phone}</span><span className="hidden sm:block"><SourceBadge source={l.source} /></span>
@@ -131,10 +131,10 @@ function LeadList({ leads }) {
               <Clock className="h-3 w-3" /> {formatDay(l.next_followup)}
             </div>
           )}
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full sm:w-auto shrink-0 items-center justify-end gap-1.5 border-t border-slate-100 pt-2.5 sm:border-0 sm:pt-0">
             <button data-testid={`row-call-${l.id}`} onClick={(e) => { e.stopPropagation(); startCall(l); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 active:scale-90"><Phone className="h-4 w-4" /></button>
-            <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); }}
+            <button data-testid={`row-whatsapp-${l.id}`} onClick={async (e) => { e.stopPropagation(); try { await api.post(`/leads/${l.id}/whatsapp`, { text: "Hi, following up on your enquiry." }); toast.success("WhatsApp sent ✓"); } catch (err) { toast.error(err.response?.data?.detail || "WhatsApp not sent"); } }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 active:scale-90"><MessageCircle className="h-4 w-4" /></button>
             <button data-testid={`row-edit-${l.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/drivers/leads/${l.id}?edit=true`); }}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 active:scale-90"><Pencil className="h-4 w-4" /></button>

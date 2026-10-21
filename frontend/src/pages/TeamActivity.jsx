@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import Others from "@/pages/Others";
+import { useAuth } from "@/context/AuthContext";
 
 const PERIODS = [
   { key: "today", label: "Today" },
@@ -27,8 +28,8 @@ const METRICS = [
   { key: "tele_call", label: "Tele Call", icon: Headset },
   { key: "spoke_investor", label: "Spoked Investor", icon: Users },
   { key: "spoke_driver", label: "Spoked Driver", icon: Truck },
-  { key: "rnr", label: "RNR", icon: PhoneOff },
   { key: "prev_followup", label: "Previous Follow-up", icon: History },
+  { key: "rnr", label: "RNR", icon: PhoneOff },
   { key: "conv_investor", label: "Conversion Investor", icon: BadgeCheck, accent: true },
   { key: "interested_driver", label: "Interested Driver", icon: ThumbsUp },
   { key: "payment", label: "Payment", icon: IndianRupee, accent: true, fmt: inr },
@@ -58,17 +59,19 @@ export default function TeamActivity() {
   const rows = (data?.rows || []).filter(r => location === "All" || r.location === location);
   const totals = METRICS.reduce((t, m) => ({ ...t, [m.key]: rows.reduce((a, r) => a + (r[m.key] || 0), 0) }), {});
 
+  const { user } = useAuth();
+  const isTeam = ["admin", "team_leader", "admin_staff"].includes(user?.role);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Team Activity</h1>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">{isTeam ? "Team Activity" : "My Activity"}</h1>
           <p className="mt-1 text-slate-600">
-            Daily performance of each team member
+            {isTeam ? "Daily performance of each team member" : "Your daily performance"}
             {data?.from && <> · {fmtDate(data.from)}{data.to !== data.from && <> – {fmtDate(data.to)}</>}</>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", !isTeam && "hidden")}>
         <button type="button" data-testid="team-others-btn" onClick={() => setOthersOpen(true)}
           className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:bg-indigo-700 active:scale-95">
           <StickyNote className="h-4 w-4" /> Other Work

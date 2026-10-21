@@ -46,6 +46,8 @@ export default function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [addState, setAddState] = useState({ open: false, status: "new" });
   const [profileOpen, setProfileOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const navItems = NAV;
 
@@ -68,7 +70,8 @@ export default function AppShell() {
       <CommonLeadsNotifier />
       <div className="min-h-screen bg-background">
         {/* ── Sidebar (desktop only) ── */}
-        <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200/70 bg-white lg:flex">
+        {menuOpen && <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-black/40 lg:hidden" />}
+        <aside className={cn("fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] flex-col border-r border-slate-200/70 bg-white lg:z-40 lg:flex", menuOpen ? "flex" : "hidden")}>
 
           {/* Logo */}
           <div className="flex shrink-0 items-center gap-2.5 px-6 py-6">
@@ -131,6 +134,15 @@ export default function AppShell() {
                 </NavLink>
               </>
             )}
+            {!["admin", "team_leader", "admin_staff"].includes(user?.role) && (
+              <NavLink to="/team/activity" data-testid="nav-my-activity"
+                className={({ isActive }) => cn(
+                  "mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                  isActive ? "bg-accent text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}>
+                <Phone className="h-[18px] w-[18px]" /> My Activity
+              </NavLink>
+            )}
           </nav>
 
           {/* User footer — always pinned at bottom */}
@@ -157,11 +169,12 @@ export default function AppShell() {
         <div className="lg:pl-64">
           {/* Top bar */}
           <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/60 px-4 py-3 glass lg:px-8">
+            <button onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden"><Menu className="h-5 w-5" /></button>
             <div className="flex items-center gap-2 lg:hidden">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
                 <Zap className="h-4 w-4" fill="currentColor" />
               </div>
-              <span className="font-display text-lg font-extrabold text-slate-900">Myklick</span>
+              <span className="hidden font-display text-lg font-extrabold text-slate-900 m375:inline">Myklick</span>
             </div>
             {/* Segment badge */}
             <div className="hidden lg:flex items-center">

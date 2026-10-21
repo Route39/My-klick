@@ -116,7 +116,7 @@ export default function ExoPhones({ segment = "investor" }) {
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[760px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">From</th>

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function ProfileDialog({ open, onOpenChange }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const qc = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ name: "", email: "", phone: "", role: "sales" });
@@ -31,6 +31,7 @@ export function ProfileDialog({ open, onOpenChange }) {
     setLoading(true);
     try {
       await api.put(`/team/${user.id}`, data);
+      await refresh();
       
       // Update local storage so useAuth detects it immediately (optimistic UI)
       const ustr = localStorage.getItem("myklick_user");

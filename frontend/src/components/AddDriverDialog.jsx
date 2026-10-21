@@ -15,7 +15,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
   const [formData, setFormData] = useState({
     name: "", remarks: "",
     phone: "",
-    location: "",
+    location: "", branch: "",
     rc: "yes",
   });
   
@@ -29,7 +29,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
 
   useEffect(() => {
     if (open) {
-      setFormData({ name: "", remarks: "", phone: "", location: "", rc: "yes" });
+      setFormData({ name: "", remarks: "", phone: "", location: "", branch: "", rc: "yes" });
       setFiles({ aadhaar: null, pan: null, license: null });
     }
   }, [open]);
@@ -95,18 +95,18 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             <Input className="rounded-xl" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Ramesh Kumar" />
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone Number</Label>
               <Input type="tel" className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. 9876543210" />
             </div>
             <div className="space-y-1.5">
-              <Label>Location</Label>
-              <Input className="rounded-xl" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Mumbai" />
+              <Label>City</Label>
+              <Input className="rounded-xl" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Tiruppur" />
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-2 pt-1">
               <Label>License Available?</Label>
               <RadioGroup value={formData.rc} onValueChange={(v) => setFormData({ ...formData, rc: v })} className="flex gap-4 mt-1">
@@ -126,7 +126,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pb-4">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2 pb-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-500">PAN Card</Label>
               <Input type="file" className="rounded-xl text-xs" onChange={(e) => setFiles({ ...files, pan: e.target.files[0] })} accept="image/*,.pdf" />
@@ -137,6 +137,13 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label>Branch</Label>
+            <select className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm" value={formData.branch} onChange={(e) => setFormData({ ...formData, branch: e.target.value })}>
+              <option value="">Select branch</option>
+              {["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
           <div className="space-y-1.5 pb-2">
             <Label>Remarks</Label>
             <textarea rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} placeholder="Any notes about this driver..." />

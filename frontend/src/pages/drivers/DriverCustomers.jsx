@@ -12,6 +12,11 @@ import { fullINR, formatINR, formatDay } from "@/lib/constants";
 
 export default function DriverCustomers({ segment = "driver" }) {
   const navigate = useNavigate();
+  // const { data = [], isLoading } = useQuery({
+  //   queryKey: ["leads", "interested-drivers"],
+  //   queryFn: async () => (await api.get("/leads", { params: { segment: "driver", status: "interested" } })).data,
+  //   refetchInterval: 15000,
+  // });
   const { data = [], isLoading } = useQuery({ queryKey: ["customers", segment], queryFn: async () => (await api.get("/customers", { params: { segment } })).data });
   const totalValue = data.reduce((a, c) => a + (c.value || 0), 0);
 
@@ -31,9 +36,9 @@ export default function DriverCustomers({ segment = "driver" }) {
       </div>
 
       {isLoading ? <ListSkeleton count={4} /> : data.length === 0 ? (
-        <EmptyState icon={Trophy} title="Your first conversion is waiting." subtitle="Convert a lead to see your customers appear here." testid="customers-empty" />
+        <EmptyState icon={Trophy} title="No converted drivers yet." subtitle="Drivers whose status is Converted will appear here." testid="customers-empty" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 d1440:grid-cols-4">
           {data.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.3) }}
               data-testid={`customer-card-${c.id}`}

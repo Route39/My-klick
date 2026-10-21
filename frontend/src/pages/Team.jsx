@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TransferLeadsDialog } from "@/components/TransferLeadsDialog";
 
 
 const RANK = [
@@ -87,7 +88,7 @@ function AddTeamMemberModal({ onSuccess }) {
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email <span className="text-slate-400 font-normal">(Optional)</span></Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@company.com" className="rounded-xl border-slate-200" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
                 <Select value={location} onValueChange={setLocation}>
@@ -108,7 +109,7 @@ function AddTeamMemberModal({ onSuccess }) {
                 <Input type="date" value={joiningDate} onChange={e => setJoiningDate(e.target.value)} className="rounded-xl border-slate-200" required />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Role</Label>
                 <Select value={role} onValueChange={setRole}>
@@ -149,7 +150,7 @@ function AddTeamMemberModal({ onSuccess }) {
 }
 
 
-function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
+function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, onToggleActive }) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -203,7 +204,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Location</Label>
                 <Select value={location} onValueChange={setLocation}>
@@ -253,12 +254,14 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate }) {
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
               <Stat value={staff.leads} label="Total Leads" />
               <Stat value={staff.converted} label="Converted" accent />
             </div>
             
-            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+            <div className="pt-4 border-t border-slate-100 flex flex-wrap justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => onTransfer(staff)} className="rounded-xl">Transfer Leads</Button>
+              <Button type="button" variant="outline" onClick={() => onToggleActive(staff)} className="rounded-xl">{staff.active === false ? "Activate" : "Deactivate"}</Button>
               <Button type="button" variant="outline" onClick={() => setIsEditing(true)} className="rounded-xl">Edit</Button>
               <Button type="button" variant="destructive" onClick={() => onDelete(staff.id)} className="rounded-xl bg-red-600 hover:bg-red-700 shadow-sm">
                 Delete Member
@@ -275,13 +278,29 @@ export default function Team() {
   const { data = [], isLoading } = useQuery({ queryKey: ["team"], queryFn: async () => (await api.get("/team")).data });
   const queryClient = useQueryClient();
   const [selectedStaff, setSelectedStaff] = useState(null);
+  const [transferStaff, setTransferStaff] = useState(null);
+  const activeMut = useMutation({
+    mutationFn: async ({ id, active }) => (await api.put(`/team/${id}/active`, { active })).data,
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["team"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setSelectedStaff(null);
+      toast.success(v.active ? "Staff activated ✓" : "Staff deactivated ✓");
+    },
+    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Failed"),
+  });
+  const handleToggleActive = (s) => {
+    const activate = s.active === false;
+    if (activate || window.confirm(`Deactivate ${s.name}? They will not be able to log in.`)) activeMut.mutate({ id: s.id, active: activate });
+  };
 
   const deleteMut = useMutation({
     mutationFn: async (id) => await api.delete(`/team/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team"] });
       setSelectedStaff(null);
-    }
+    },
+    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Could not delete")
   });
 
   const updateMut = useMutation({
@@ -313,7 +332,7 @@ export default function Team() {
       </div>
 
       {isLoading ? <ListSkeleton count={4} /> : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 d1440:grid-cols-4">
           {data.filter((m, idx, arr) => arr.findIndex(x => (x.id || x.email || x.phone) === (m.id || m.email || m.phone)) === idx).map((m, i) => {
             const rank = RANK[i];
             return (
@@ -323,7 +342,7 @@ export default function Team() {
                 <div className="flex items-center gap-3">
                   <Avatar name={m.name} size={48} />
                   <div className="flex-1">
-                    <div className="font-display font-bold text-slate-900">{m.name}</div>
+                    <div className="font-display font-bold text-slate-900">{m.name}{m.active === false && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Inactive</span>}</div>
                     <div className="text-xs capitalize text-slate-400">{m.role}</div>
                   </div>
                   {rank && <div className={cn("flex h-8 w-8 items-center justify-center rounded-full", rank.color)}><rank.icon className="h-4 w-4" /></div>}
@@ -358,7 +377,9 @@ export default function Team() {
         </div>
       )}
       
-      <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} onUpdate={handleUpdate} />
+      <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} onUpdate={handleUpdate}
+        onTransfer={(s) => { setSelectedStaff(null); setTransferStaff(s); }} onToggleActive={handleToggleActive} />
+      <TransferLeadsDialog staff={transferStaff} open={!!transferStaff} onOpenChange={(v) => { if (!v) setTransferStaff(null); }} />
     </div>
   );
 }

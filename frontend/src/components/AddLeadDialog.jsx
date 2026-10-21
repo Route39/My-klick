@@ -19,7 +19,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "",
+    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "",
   });
 
   const { data: users = [] } = useQuery({
@@ -36,7 +36,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
     onSuccess: (lead) => {
       qc.invalidateQueries();
       toast.success("Lead created ✓", { description: lead.name });
-      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", remarks: "" });
+      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "" });
       onOpenChange(false);
       navigate(`/leads/${lead.id}`);
     },
@@ -66,7 +66,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
             <Input data-testid="lead-name-input" value={form.name} onChange={(e) => set("name")(e.target.value)}
               placeholder="Kumar Traders" className="rounded-xl" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone</Label>
               <Input data-testid="lead-phone-input" value={form.phone} onChange={(e) => set("phone")(e.target.value)}
@@ -78,7 +78,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 placeholder="Optional" className="rounded-xl" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Source</Label>
               <Select value={form.source} onValueChange={set("source")}>
@@ -94,7 +94,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 placeholder="₹" className="rounded-xl" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>No of vehicles</Label>
               <Input data-testid="lead-vehicles-input" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)}
@@ -106,6 +106,22 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 <SelectTrigger data-testid="lead-assign-select" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
                   {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>City</Label>
+              <Input data-testid="lead-city-input" value={form.location} onChange={(e) => set("location")(e.target.value)}
+                placeholder="e.g. Hosur" className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Branch</Label>
+              <Select value={form.branch} onValueChange={set("branch")}>
+                <SelectTrigger data-testid="lead-branch-select" className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>
+                  {["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

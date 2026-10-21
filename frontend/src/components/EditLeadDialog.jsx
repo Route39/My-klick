@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api, { formatApiErrorDetail } from "@/lib/api";
-import { SOURCES, SOURCE_META, STAGES, STATUS_META } from "@/lib/constants";
+import { SOURCES, SOURCE_META, STAGES, DRIVER_STAGES, STATUS_META } from "@/lib/constants";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pencil } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const PRIORITIES = ["high", "medium", "low"];
 
@@ -17,16 +18,23 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
   const qc = useQueryClient();
   const [form, setForm] = useState(() => shape(lead));
 
-  React.useEffect(() => { if (open) setForm(shape(lead)); }, [open, lead]);
+  const [files, setFiles] = useState({ aadhaar: null, pan: null, license: null });
+  React.useEffect(() => { if (open) { setForm(shape(lead)); setFiles({ aadhaar: null, pan: null, license: null }); } }, [open, lead]);
 
   const { data: users = [] } = useQuery({
     queryKey: ["users"], queryFn: async () => (await api.get("/users")).data, enabled: open,
   });
 
   const save = useMutation({
-    mutationFn: async () => (await api.put(`/leads/${lead.id}`, {
-      ...form, value: Number(form.value) || 0, assigned_to: form.assigned_to || null,
-    })).data,
+    mutationFn: async () => {
+      const up = async (f) => { if (!f) return ""; const fd = new FormData(); fd.append("file", f); return (await api.post("/upload", fd, { headers: { "Content-Type": "multipart/form-data" } })).data.url; };
+      const aadhaar_url = (await up(files.aadhaar)) || form.aadhaar_url;
+      const pan_url = (await up(files.pan)) || form.pan_url;
+      const license_url = (await up(files.license)) || form.license_url;
+      return (await api.put(`/leads/${lead.id}`, {
+      ...form, aadhaar_url, pan_url, license_url, value: Number(form.value) || 0, assigned_to: form.assigned_to || null,
+    })).data;
+    },
     onSuccess: () => {
       qc.invalidateQueries();
       toast.success("Lead updated ✓");
@@ -36,6 +44,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
   });
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+  const isDriver = form.segment === "driver";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -44,40 +53,89 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-primary">
             <Pencil className="h-5 w-5" />
           </div>
-          <DialogTitle className="font-display text-2xl">Edit Lead</DialogTitle>
+          <DialogTitle className="font-display text-2xl">{isDriver ? "Edit Driver" : "Edit Lead"}</DialogTitle>
         </DialogHeader>
         <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+          <Field label="Segment">
+            <RadioGroup
+              data-testid="edit-segment"
+              value={form.segment}
+              onValueChange={(v) => setForm((f) => ({ ...f, segment: v, status: (v === "driver" ? DRIVER_STAGES : STAGES)[0] }))}
+              className="flex gap-6"
+            >
+              {[["investor", "Investor"], ["driver", "Driver"]].map(([v, l]) => (
+                <div key={v} className="flex items-center gap-2">
+                  <RadioGroupItem value={v} id={`seg-${v}`} />
+                  <Label htmlFor={`seg-${v}`} className="cursor-pointer">{l}</Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </Field>
+          {isDriver ? (<>
+          <Field label="Driver Name"><Input value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <Field label="Phone Number"><Input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
+          </div>
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <div className="space-y-2 pt-1">
+              <Label>License Available?</Label>
+              <RadioGroup value={form.rc || "yes"} onValueChange={set("rc")} className="flex gap-4 mt-1">
+                <div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="erc-yes" /><Label htmlFor="erc-yes" className="cursor-pointer font-normal">Yes</Label></div>
+                <div className="flex items-center space-x-2"><RadioGroupItem value="no" id="erc-no" /><Label htmlFor="erc-no" className="cursor-pointer font-normal">No</Label></div>
+              </RadioGroup>
+            </div>
+            <DocField label="Aadhaar Card" url={form.aadhaar_url} onFile={(f) => setFiles((x) => ({ ...x, aadhaar: f }))} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <DocField label="PAN Card" url={form.pan_url} onFile={(f) => setFiles((x) => ({ ...x, pan: f }))} />
+            <DocField label="Original License" url={form.license_url} onFile={(f) => setFiles((x) => ({ ...x, license: f }))} />
+          </div>
+          <Field label="Branch">
+            <Select value={form.branch} onValueChange={set("branch")}>
+              <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+              <SelectContent>{["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          </>) : (<>
           <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Email"><Input value={form.email} onChange={(e) => set("email")(e.target.value)} className="rounded-xl" /></Field>
-            <Field label="Location"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Source">
               <Select value={form.source} onValueChange={set("source")}>
                 <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
                 <SelectContent>{SOURCES.map((s) => <SelectItem key={s} value={s}>{SOURCE_META[s].label}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Product / interest"><Input value={form.product} onChange={(e) => set("product")(e.target.value)} className="rounded-xl" /></Field>
+            {/* <Field label="Product / interest"><Input value={form.product} onChange={(e) => set("product")(e.target.value)} className="rounded-xl" /></Field> */}
+            <Field label="Branch">
+              <Select value={form.branch} onValueChange={set("branch")}>
+                <SelectTrigger data-testid="edit-branch" className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>{["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Cash value (₹)"><Input data-testid="edit-value" type="number" value={form.value} onChange={(e) => set("value")(e.target.value)} className="rounded-xl" /></Field>
             <Field label="No of vehicles"><Input data-testid="edit-vehicles" value={form.no_of_vehicles} onChange={(e) => set("no_of_vehicles")(e.target.value)} className="rounded-xl" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+            {/*
             <Field label="Priority">
               <Select value={form.priority} onValueChange={set("priority")}>
                 <SelectTrigger data-testid="edit-priority" className="rounded-xl"><SelectValue /></SelectTrigger>
                 <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+            */}
+          </>)}
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Assigned to">
               <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
                 <SelectTrigger data-testid="edit-assign" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
@@ -87,11 +145,11 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             <Field label="Status">
               <Select value={form.status} onValueChange={set("status")}>
                 <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+                <SelectContent>{(form.segment === "driver" ? DRIVER_STAGES : STAGES).map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
           </div>
-          <Field label="Notes"><Textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} className="rounded-xl" rows={3} /></Field>
+          {!isDriver && <Field label="Notes"><Textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} className="rounded-xl" rows={3} /></Field>}
           <Field label="Remarks"><Input data-testid="edit-remarks" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)} className="rounded-xl" /></Field>
           <Button data-testid="edit-lead-submit" type="submit" disabled={save.isPending} className="w-full rounded-xl py-6 text-base font-semibold">
             {save.isPending ? "Saving…" : "Save Changes"}
@@ -100,6 +158,10 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function DocField({ label, url, onFile }) {
+  return <div className="space-y-1.5"><Label className="text-xs text-slate-500">{label}{url ? <a href={url} target="_blank" rel="noreferrer" className="ml-2 text-primary underline">View</a> : null}</Label><Input type="file" className="rounded-xl text-xs" accept="image/*,.pdf" onChange={(e) => onFile(e.target.files[0])} /></div>;
 }
 
 function Field({ label, children }) {
@@ -112,7 +174,7 @@ function shape(l = {}) {
     location: l.location || "", product: l.product || "", source: l.source || "manual",
     status: l.status || "new", priority: l.priority || "medium",
     assigned_to: l.assigned_to || "", value: l.value || 0, notes: l.notes || "", company: l.company || "",
-    no_of_vehicles: l.no_of_vehicles || "", remarks: l.remarks || "",
+    no_of_vehicles: l.no_of_vehicles || "", branch: l.branch || "", remarks: l.remarks || "",
     segment: l.segment || "investor", rc: l.rc || "",
     aadhaar_url: l.aadhaar_url || "", pan_url: l.pan_url || "", license_url: l.license_url || "",
   };

@@ -24,12 +24,13 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     queryKey: ["lead-followups", lead.id],
     queryFn: async () => (await api.get(`/leads/${lead.id}/followups`)).data,
     staleTime: 60000,
+    enabled: !Array.isArray(lead.pending_followups),
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
   // Pending only, sorted oldest → newest
-  const pendingFollowUps = followUps
+  const pendingFollowUps = (Array.isArray(lead.pending_followups) ? lead.pending_followups : followUps)
     .filter((f) => f.status === "pending")
     .sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
 
@@ -73,8 +74,10 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
 
   const whatsapp = async (e) => {
     e.stopPropagation();
-    await api.post(`/leads/${lead.id}/whatsapp`, { text: "Hi, following up on your enquiry." });
-    toast.success("WhatsApp sent ✓", { description: lead.name });
+    try {
+      await api.post(`/leads/${lead.id}/whatsapp`, { text: "Hi, following up on your enquiry." });
+      toast.success("WhatsApp sent ✓", { description: lead.name });
+    } catch (err) { toast.error(err.response?.data?.detail || "WhatsApp not sent"); return; }
     navigate(lead.segment === "driver" ? `/drivers/leads/${lead.id}?tab=whatsapp` : `/leads/${lead.id}?tab=whatsapp`);
   };
   const call = (e) => { e.stopPropagation(); startCall(lead); };
@@ -125,8 +128,10 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     >
       {/* Status + Priority */}
       <div className="flex items-center justify-between">
-        <StatusBadge status={lead.status} />
-        <PriorityBadge priority={lead.priority} />
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={lead.status} />
+        </div>
+        {/* <PriorityBadge priority={lead.priority} /> */}
       </div>
 
       {/* Avatar + Name */}

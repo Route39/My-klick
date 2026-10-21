@@ -7,7 +7,7 @@ import App from "@/App";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,
+      staleTime: 15000,
       gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: true,
       refetchOnMount: true,

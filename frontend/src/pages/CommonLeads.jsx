@@ -73,11 +73,21 @@ function StatCard({ label, value, tone = "" }) {
 
 const LANGS = ["Tamil", "English", "Kannada", "Hindi", "Telugu", "Malayalam"];
 
+// City filter tabs: label + spellings matched against the lead's location text
+const CITY_TABS = [
+  { key: "coimbatore", label: "Coimbatore", match: ["coimbatore", "kovai"] },
+  { key: "tirupur", label: "Tirupur", match: ["tirupur", "tiruppur"] },
+  { key: "bangalore", label: "Bangalore", match: ["bangalore", "bengaluru", "banglore", "blr"] },
+  { key: "chennai", label: "Chennai", match: ["chennai"] },
+];
+
 function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim, claiming, canOpen }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [taken, setTaken] = useState("all");
   const [region, setRegion] = useState("all");
   const [city, setCity] = useState("");
+  const [cityTab, setCityTab] = useState("");
   const [lang, setLang] = useState("all");
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["common-leads", "report", segment, endpoint],
@@ -88,6 +98,11 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
   const scoped = rows
     .filter((r) => region === "all" || (r.region || "") === region)
     .filter((r) => !c || (r.location || "").toLowerCase().includes(c))
+    .filter((r) => {
+      if (!cityTab) return true;
+      const loc = (r.location || "").toLowerCase();
+      return (CITY_TABS.find((t) => t.key === cityTab)?.match || []).some((m) => loc.includes(m));
+    })
     .filter((r) => lang === "all" || (r.language || "").split(/,\s*/).includes(lang));
   const takenCount = scoped.filter((r) => r.assigned_to).length;
   const list = scoped.filter((r) => taken === "all" || (taken === "taken" ? r.assigned_to : !r.assigned_to));
@@ -105,6 +120,13 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {chip("all", "All")}{chip("taken", "Taken")}{chip("open", "Not Taken")}
+        <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+        {CITY_TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setCityTab(cityTab === t.key ? "" : t.key)}
+            className={`rounded-xl border px-3 py-1.5 text-sm ${cityTab === t.key ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"}`}>
+            {t.label}
+          </button>
+        ))}
         <select value={region} onChange={(e) => setRegion(e.target.value)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm">
           <option value="all">All States</option>
@@ -122,10 +144,11 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
         <EmptyState icon={Inbox} title="No common leads" subtitle="Nothing matches these filters." />
       ) : (
         <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Lead</th><th className="px-4 py-3">State / City</th>
+                <th className="px-4 py-3">Language</th>
                 <th className="px-4 py-3">Posted</th><th className="px-4 py-3">Taken by</th>
                 <th className="px-4 py-3">Lead Status</th>
                 {onClaim && <th className="px-4 py-3"></th>}
@@ -135,8 +158,17 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
               {list.map((r) => (
                 <tr key={r.id} onClick={() => (!canOpen || canOpen(r)) && navigate(`${leadPath}/${r.id}`)}
                   className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-3"><div className="font-semibold text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.phone}{r.language && <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">🗣 {r.language}</span>}</div></td>
+                  <td className="px-4 py-3"><div className="font-semibold text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.phone}</div></td>
                   <td className="px-4 py-3"><div>{r.region || <span className="text-red-500">No state</span>}</div><div className="text-xs text-slate-500">{r.location || "—"}</div></td>
+                  <td className="px-4 py-3">
+                    {r.language ? (
+                      <div className="flex flex-wrap gap-1">
+                        {r.language.split(/,\s*/).filter(Boolean).map((lg) => (
+                          <span key={lg} className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">{lg}</span>
+                        ))}
+                      </div>
+                    ) : <span className="text-xs text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3"><div>{r.created_by_name || "Admin"}</div><div className="text-xs text-slate-500">{formatDay(r.created_at)}</div></td>
                   <td className="px-4 py-3">
                     {r.assigned_to ? (
@@ -149,7 +181,7 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
                   </td>
                   {onClaim && (
                     <td className="px-4 py-3 text-right">
-                      {!r.assigned_to && (
+                      {!r.assigned_to && user?.role !== "admin" && (
                         <Button size="sm" className="rounded-xl" disabled={claiming}
                           onClick={(e) => { e.stopPropagation(); onClaim(r.id); }}>
                           <UserPlus className="mr-1 h-4 w-4" /> Assign to me
@@ -255,7 +287,7 @@ export default function CommonLeads({ segment = "investor" }) {
         <CommonLeadsReport segment={segment}
           endpoint={isManager ? "/common-leads/report" : "/common-leads/report-mine"}
           onClaim={(id) => claim.mutate(id)} claiming={claim.isPending}
-          canOpen={(r) => isManager || r.assigned_to === user?.id} />
+          canOpen={(r) => isManager || !r.assigned_to || r.assigned_to === user?.id} />
         {isManager && <StaffRegions />}
       </div>
 

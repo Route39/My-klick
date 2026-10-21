@@ -192,7 +192,7 @@ export default function CallLogs({ segment = '' }) {
               <div className="text-center py-20 text-slate-500">No calls found.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[760px] text-left text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-400">
                       <th className="pb-3 font-medium">Date & Time</th>
