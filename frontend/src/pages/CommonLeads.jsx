@@ -148,6 +148,7 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Lead</th><th className="px-4 py-3">State / City</th>
+                <th className="px-4 py-3">Language</th>
                 <th className="px-4 py-3">Posted</th><th className="px-4 py-3">Taken by</th>
                 <th className="px-4 py-3">Lead Status</th>
                 {onClaim && <th className="px-4 py-3"></th>}
@@ -157,8 +158,17 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
               {list.map((r) => (
                 <tr key={r.id} onClick={() => (!canOpen || canOpen(r)) && navigate(`${leadPath}/${r.id}`)}
                   className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-3"><div className="font-semibold text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.phone}{r.language && <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">🗣 {r.language}</span>}</div></td>
+                  <td className="px-4 py-3"><div className="font-semibold text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.phone}</div></td>
                   <td className="px-4 py-3"><div>{r.region || <span className="text-red-500">No state</span>}</div><div className="text-xs text-slate-500">{r.location || "—"}</div></td>
+                  <td className="px-4 py-3">
+                    {r.language ? (
+                      <div className="flex flex-wrap gap-1">
+                        {r.language.split(/,\s*/).filter(Boolean).map((lg) => (
+                          <span key={lg} className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">{lg}</span>
+                        ))}
+                      </div>
+                    ) : <span className="text-xs text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3"><div>{r.created_by_name || "Admin"}</div><div className="text-xs text-slate-500">{formatDay(r.created_at)}</div></td>
                   <td className="px-4 py-3">
                     {r.assigned_to ? (

@@ -754,7 +754,7 @@ async def common_leads_report(segment: Optional[str] = None, user: dict = Depend
     if segment:
         q["segment"] = seg_match(segment)
     leads = await db.leads.find(q).sort("created_at", -1).to_list(5000)
-    keys = ("id", "name", "phone", "location", "region", "segment", "status", "assigned_to",
+    keys = ("id", "name", "phone", "location", "region", "language", "segment", "status", "assigned_to",
             "assigned_name", "claimed_at", "created_at", "created_by_name", "remarks")
     return [{k: l.get(k) for k in keys} for l in leads]
 
