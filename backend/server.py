@@ -34,6 +34,25 @@ client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where(), maxIdleTimeMS=
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="MyKlick CRM")
+
+# ---- Global branch filter: frontend sends "X-Branch: Bangalore|Chennai|Coimbatore|Tiruppur" ----
+import contextvars
+_BRANCH = contextvars.ContextVar("myklick_branch", default="")
+_BRANCH_RX = {"tiruppur": "tirup{1,2}ur", "tirupur": "tirup{1,2}ur", "bangalore": "(bangalore|bengaluru|banglore)"}
+
+@app.middleware("http")
+async def branch_context(request, call_next):
+    token = _BRANCH.set((request.headers.get("x-branch") or "").strip())
+    try:
+        return await call_next(request)
+    finally:
+        _BRANCH.reset(token)
+
+def branch_q() -> dict:
+    b = _BRANCH.get().lower()
+    if not b:
+        return {}
+    return {"branch": {"$regex": "^" + _BRANCH_RX.get(b, re.escape(b)) + "$", "$options": "i"}}
 api = APIRouter(prefix="/api")
 
 JWT_ALGORITHM = "HS256"
@@ -119,7 +138,13 @@ def lead_inactive(lead: dict) -> bool:
     """Inactive-lead pool removed: leads never become visible to others by going stale."""
     return False
 
-def scope_leads(user: dict, base: dict = None, pool: bool = False) -> dict:
+def scope_leads(user: dict, base: dict = None, pool: bool = False, use_branch: bool = True) -> dict:
+    q = _scope_leads_core(user, base, pool)
+    if use_branch:
+        q.update(branch_q())
+    return q
+
+def _scope_leads_core(user: dict, base: dict = None, pool: bool = False) -> dict:
     """Organisation + role scoping. Admin, admin_staff and team leader see every lead.
     Sales exec sees leads assigned to them plus unassigned leads."""
     q = dict(base or {})
@@ -2103,7 +2128,7 @@ async def list_followups(scope: str = "all", segment: Optional[str] = None, user
         lead_ids = [l["id"] for l in leads]
         base["lead_id"] = {"$in": lead_ids}
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
-    _fu_map = {l["id"]: l for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"},
+    _fu_map = {l["id"]: l for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up", **branch_q()},
                {"_id": 0, "id": 1, "name": 1, "phone": 1, "value": 1, "status": 1}).to_list(None)}
     fs = [f for f in fs if f.get("lead_id") in _fu_map]
     now = datetime.now(timezone.utc)
@@ -2207,7 +2232,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
         base["lead_id"] = {"$in": [l["id"] for l in seg_leads]}
     
     fs = await db.followups.find(base).sort("due_at", 1).to_list(1000)
-    _fu_ok = {l["id"] for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up"}).to_list(None)}
+    _fu_ok = {l["id"] for l in await db.leads.find({"id": {"$in": [f.get("lead_id") for f in fs]}, "status": "follow_up", **branch_q()}).to_list(None)}
     fs = [f for f in fs if f.get("lead_id") in _fu_ok]
     now = datetime.now(timezone.utc)
     today = today_ist()
@@ -2286,6 +2311,9 @@ async def list_customers(segment: Optional[str] = None, user: dict = Depends(get
         base["assigned_to"] = user["id"]
     if segment:
         base["segment"] = seg_match(segment)
+    if branch_q():
+        _bl = await db.leads.find({"organization_id": org_of(user), **branch_q()}, {"_id": 0, "id": 1}).to_list(None)
+        base["lead_id"] = {"$in": [l["id"] for l in _bl]}
     cs = await db.customers.find(base).sort("converted_at", -1).to_list(1000)
     return [clean(c) for c in cs]
 
@@ -2330,7 +2358,7 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
         d10 = digits[-10:]
         ors.append({"phone_norm": {"$regex": re.escape(d10)}})
         ors.append({"phone": {"$regex": r"\D*".join(re.escape(c) for c in d10)}})
-    lead_q = scope_leads(user, {"$or": ors}, pool=True)
+    lead_q = scope_leads(user, {"$or": ors}, pool=True, use_branch=False)
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
     if segment:
         lead_q["segment"] = seg_match(segment)
