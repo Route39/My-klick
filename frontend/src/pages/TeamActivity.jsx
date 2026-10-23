@@ -60,7 +60,7 @@ export default function TeamActivity() {
   const totals = METRICS.reduce((t, m) => ({ ...t, [m.key]: rows.reduce((a, r) => a + (r[m.key] || 0), 0) }), {});
 
   const { user } = useAuth();
-  const isTeam = ["admin", "team_leader", "admin_staff"].includes(user?.role);
+  const isTeam = ["admin", "team_leader"].includes(user?.role);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

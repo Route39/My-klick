@@ -146,6 +146,7 @@ export default function AppShell() {
                   )}>
                   <BarChart3 className="h-[18px] w-[18px]" /> Team
                 </NavLink>
+                {["admin", "team_leader"].includes(user?.role) && (
                 <NavLink to="/team/activity" data-testid="nav-team-activity"
                   className={({ isActive }) => cn(
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
@@ -153,9 +154,10 @@ export default function AppShell() {
                   )}>
                   <Phone className="h-[18px] w-[18px]" /> Team Activity
                 </NavLink>
+                )}
               </>
             )}
-            {!["admin", "team_leader", "admin_staff"].includes(user?.role) && (
+            {!["admin", "team_leader"].includes(user?.role) && (
               <NavLink to="/team/activity" data-testid="nav-my-activity"
                 className={({ isActive }) => cn(
                   "mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",

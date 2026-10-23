@@ -568,7 +568,7 @@ async def mark_note_noted(note_id: str, user: dict = Depends(get_current_user)):
 async def team_activity(period: str = "today", start: str = "", end: str = "",
                         user: dict = Depends(get_current_user)):
     """Per-member activity report for a date range (IST). Admin, team leader, admin+staff."""
-    self_only = not can_view_team(user)
+    self_only = user.get("role") not in ("admin", "team_leader")  # admin_staff sees only own activity
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
     one_day = timedelta(days=1)
