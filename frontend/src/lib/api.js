@@ -3,12 +3,20 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 export const TOKEN_KEY = "myklick_token";
+export const BRANCH_KEY = "myklick_branch";
+// Pages that follow the global branch filter (Leads, Pipeline, Follow-ups, Customers, Dashboard)
+const BRANCH_PATHS = ["/leads", "/followups", "/customers", "/dashboard/stats", "/briefing"];
 
 const api = axios.create({ baseURL: API });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const b = localStorage.getItem(BRANCH_KEY);
+    const path = (config.url || "").split("?")[0];
+    if (b && (config.method || "get").toLowerCase() === "get" && BRANCH_PATHS.includes(path)) config.headers["X-Branch"] = b;
+  } catch (_) {}
   return config;
 });
 

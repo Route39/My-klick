@@ -12,6 +12,7 @@ import { WhatsAppNotifier } from "@/components/WhatsAppNotifier";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { BranchFilter } from "@/components/BranchFilter";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
@@ -206,6 +207,7 @@ export default function AppShell() {
                 {currentSegment === "driver" ? "Driver" : "Investor"}
               </span>
             </div>
+            <BranchFilter className="ml-auto lg:ml-3" />
             <button data-testid="open-search-btn" onClick={() => setSearchOpen(true)}
               className="ml-auto flex items-center gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-300 sm:w-72 lg:ml-3">
               <Search className="h-4 w-4" />

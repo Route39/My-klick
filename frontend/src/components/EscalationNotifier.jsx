@@ -22,6 +22,7 @@ function audioCtx() {
 ["pointerdown", "keydown", "touchstart"].forEach((ev) =>
   window.addEventListener(ev, () => {
     try { const c = audioCtx(); if (c && c.state !== "running") c.resume().catch(() => {}); } catch (_) {}
+    askNotifyPermission();
   }, { passive: true })
 );
 
@@ -52,6 +53,28 @@ function loadSeen() {
 }
 function saveSeen(set) {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify([...set].slice(-300))); } catch (_) {}
+}
+
+// Desktop (OS) notification -> visible even when user is on another tab / app.
+function askNotifyPermission() {
+  try {
+    if ("Notification" in window && Notification.permission === "default") {
+      const r = Notification.requestPermission();
+      if (r && r.catch) r.catch(() => {});
+    }
+  } catch (_) {}
+}
+function desktopNotify(e, onOpen) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const type = e.segment === "driver" ? "Driver" : "Investor";
+    const n = new Notification(`🚨 ${type} Escalation · ${e.region}`, {
+      body: `${e.lead_name || e.customer_number} — ${e.reason} · by ${e.created_by_name || "Staff"}`,
+      tag: `esc-${e.id}`,
+      requireInteraction: true,
+    });
+    n.onclick = () => { window.focus(); onOpen(); n.close(); };
+  } catch (_) {}
 }
 
 /** Polls for new escalations (admin: all states, others: own state) -> popup + ringing sound. */
@@ -102,7 +125,7 @@ export function EscalationNotifier({ intervalMs = 3000 }) {
           if (first && age > FRESH_MS) return; // old one on page load -> mark seen silently
           activeRef.current.set(e.id, true);
           fresh += 1;
-          toast.error(`🚨 Escalation · ${e.region}`, {
+          toast.error(`🚨 ${e.segment === "driver" ? "Driver" : "Investor"} Escalation · ${e.region}`, {
             description: `${e.lead_name || e.customer_number} — ${e.reason} · by ${e.created_by_name || "Staff"}`,
             duration: RING_DURATION_MS,
             closeButton: true,
@@ -110,6 +133,7 @@ export function EscalationNotifier({ intervalMs = 3000 }) {
             action: { label: "Open", onClick: () => { stopRing(); navRef.current("/escalations"); } },
             onDismiss: () => { activeRef.current.delete(e.id); if (!activeRef.current.size) stopRing(); },
           });
+          desktopNotify(e, () => { stopRing(); navRef.current("/escalations"); });
         });
         saveSeen(shownRef.current);
         if (fresh) { startRing(); qc.invalidateQueries({ queryKey: ["escalations"] }); }
