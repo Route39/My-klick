@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PhoneIncoming, PhoneOutgoing, RefreshCw, Play, Loader2, Search, Phone, ArrowRight, X, MapPin, UserPlus, UserCheck } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, RefreshCw, Play, Loader2, Search, Phone, ArrowRight, X, MapPin, UserPlus, UserCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -77,6 +77,18 @@ export default function ExoPhones({ segment = "investor" }) {
     mutationFn: async (sid) => (await api.post(`/exophones/calls/${sid}/claim`, null, { params: { segment } })).data,
     onSuccess: () => { toast.success("Lead assigned to you ✓"); qc.invalidateQueries({ queryKey: ["exophones"] }); },
     onError: (e) => { toast.error(e?.response?.data?.detail || "Could not assign"); qc.invalidateQueries({ queryKey: ["exophones"] }); },
+  });
+  const escQ = useQuery({
+    queryKey: ["escalations", "open"],
+    queryFn: async () => (await api.get("/escalations", { params: { status: "open" } })).data,
+    refetchInterval: 10000,
+  });
+  const escalated = new Map((escQ.data || []).map((e) => [e.sid, e]));
+  const [esc, setEsc] = useState(null);
+  const escalate = useMutation({
+    mutationFn: async (b) => (await api.post("/escalations", b)).data,
+    onSuccess: (r) => { toast.success(`Escalated to ${r.region} team ✓`); setEsc(null); qc.invalidateQueries({ queryKey: ["escalations"] }); },
+    onError: (e) => toast.error(e?.response?.data?.detail || "Could not escalate"),
   });
   const isAdmin = !!data?.is_admin;
   const cols = isAdmin ? 9 : 7;
@@ -173,6 +185,7 @@ export default function ExoPhones({ segment = "investor" }) {
                     })()}
                   </td>
                   <td className="px-4 py-3">
+                    <div className="flex items-center">
                     {c.claimed_by ? (
                       <div className="leading-tight">
                         <div className="inline-flex items-center gap-1 font-medium"><UserCheck className="h-3.5 w-3.5" />{c.claimed_name || "Assigned"}</div>
@@ -186,6 +199,19 @@ export default function ExoPhones({ segment = "investor" }) {
                         <UserPlus className="h-3.5 w-3.5" /> Assign to me
                       </button>
                     )}
+                    {escalated.get(c.sid) ? (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-xs font-semibold text-red-600" title={escalated.get(c.sid).reason}>
+                        <AlertTriangle className="h-3.5 w-3.5" /> Escalated · {escalated.get(c.sid).region}
+                      </span>
+                    ) : isAdmin ? (
+                      <span className="ml-2 text-xs text-slate-400">—</span>
+                    ) : (
+                      <button onClick={() => setEsc({ sid: c.sid, region: "", reason: "", who: c.lead_name || customer })}
+                        className="ml-2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Escalate
+                      </button>
+                    )}
+                    </div>
                   </td>
                   {isAdmin && <td className="px-4 py-3 tabular-nums text-slate-600">{dur(c.duration)}</td>}
                   {isAdmin && <td className="px-4 py-3">{c.recording_url ? <Recording sid={c.sid} /> : null}</td>}
@@ -195,6 +221,41 @@ export default function ExoPhones({ segment = "investor" }) {
           </tbody>
         </table>
       </div>
+      {esc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !escalate.isPending && setEsc(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Escalate call</h3>
+                <p className="text-sm text-slate-500">{esc.who}</p>
+              </div>
+              <button onClick={() => setEsc(null)} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-4 text-sm font-medium text-slate-700">Send to which state?</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {["Tamil Nadu", "Karnataka"].map((r) => (
+                <button key={r} onClick={() => setEsc({ ...esc, region: r })}
+                  className={cn("rounded-xl border px-3 py-3 text-sm font-semibold", esc.region === r ? "border-red-500 bg-red-50 text-red-600" : "border-slate-200 text-slate-700 hover:bg-slate-50")}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            {esc.region && (
+              <>
+                <p className="mt-4 text-sm font-medium text-slate-700">Reason</p>
+                <textarea autoFocus value={esc.reason} onChange={(e) => setEsc({ ...esc, reason: e.target.value })} rows={3}
+                  placeholder="Why does this call need attention?"
+                  className="mt-2 w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-red-400" />
+                <button disabled={!esc.reason.trim() || escalate.isPending}
+                  onClick={() => escalate.mutate({ sid: esc.sid, region: esc.region, reason: esc.reason, segment })}
+                  className="mt-3 w-full rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                  {escalate.isPending ? "Sending…" : `Confirm · notify ${esc.region} team`}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {(() => {
         const total = data?.total || 0;
         const pages = Math.max(1, Math.ceil(total / PAGE));

@@ -198,6 +198,7 @@ class TeamMemberUpdate(BaseModel):
     role: str
     location: Optional[str] = None
     joining_date: Optional[str] = None
+    password: Optional[str] = None
 
 class TeamMemberIn(BaseModel):
     name: str
@@ -456,6 +457,8 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales"
     }
     
+    if (body.password or "").strip():
+        update_data["password_hash"] = hash_password(body.password.strip())
     if not can_view_all(user):
         update_data.pop("role", None)  # staff cannot change their own role
     if update_data["phone"]:
@@ -1865,6 +1868,103 @@ async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depe
                                        {"$set": {"lead_id": lead["id"], "lead_name": lead.get("name"), "lead_segment": lead.get("segment", seg)}})
     return {"ok": True, "lead_id": lead["id"], "claimed_name": user.get("name", ""), "claimed_location": user.get("location", "")}
 
+# ---------------------------------------------------------------------------
+# Escalations (ExoPhones call -> state team)
+# ---------------------------------------------------------------------------
+class EscalateIn(BaseModel):
+    sid: str
+    region: str
+    reason: str
+    segment: Optional[str] = "investor"
+
+class EscalationResolveIn(BaseModel):
+    note: str
+    talked: bool = True
+
+def _esc_visible(user: dict) -> dict:
+    q = {"organization_id": org_of(user)}
+    reg = staff_region(user)
+    if reg:
+        q["$or"] = [{"region": reg}, {"created_by": user["id"]}]
+    return q
+
+@api.post("/escalations")
+async def create_escalation(body: EscalateIn, user: dict = Depends(get_current_user)):
+    if body.region not in REGIONS:
+        raise HTTPException(status_code=400, detail="Select Tamil Nadu or Karnataka")
+    if not (body.reason or "").strip():
+        raise HTTPException(status_code=400, detail="Reason is required")
+    call = await db.exo_calls.find_one({"sid": body.sid}, {"_id": 0})
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if await db.escalations.find_one({"sid": body.sid, "status": "open"}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="This call is already escalated")
+    customer = call.get("from_number") if call.get("direction") == "incoming" else call.get("to_number")
+    doc = {
+        "id": str(uuid.uuid4()), "organization_id": org_of(user), "sid": body.sid,
+        "region": body.region, "reason": body.reason.strip(), "segment": "driver" if body.segment == "driver" else "investor",
+        "customer_number": customer or "", "direction": call.get("direction"), "call_time": call.get("start_time"),
+        "lead_id": call.get("lead_id"), "lead_name": call.get("lead_name") or call.get("caller_name") or "",
+        "agent_name": call.get("agent_name") or "", "outcome": call.get("outcome") or call.get("status") or "",
+        "status": "open", "created_by": user["id"], "created_by_name": user.get("name", ""),
+        "created_at": now_iso(), "resolved_by": None, "resolved_name": None, "resolved_at": None,
+        "note": "", "talked": None,
+    }
+    await db.escalations.insert_one(dict(doc))
+    return clean(doc)
+
+@api.get("/escalations")
+async def list_escalations(status: str = "", user: dict = Depends(get_current_user)):
+    q = _esc_visible(user)
+    if status in ("open", "resolved"):
+        q["status"] = status
+    rows = await db.escalations.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return rows
+
+def _esc_ts(v):
+    """Parse ISO string / datetime -> aware UTC datetime (handles 'Z', '+00:00', naive)."""
+    try:
+        d = v if isinstance(v, datetime) else datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+@api.get("/escalations/latest")
+async def latest_escalations(since: str, user: dict = Depends(get_current_user)):
+    """Polled by staff: new open escalations for their state -> popup + sound."""
+    role = user.get("role")
+    reg = user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower())
+    q = {"organization_id": org_of(user), "status": "open", "created_by": {"$ne": user["id"]}}
+    if role in ("admin", "admin_staff"):
+        pass  # admin: all states
+    elif reg:
+        q["region"] = reg  # team leader / staff: own state only
+    elif role != "team_leader":
+        return []
+    rows = await db.escalations.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    since_d = _esc_ts(since) or (datetime.now(timezone.utc) - timedelta(hours=12))
+    out = []
+    for r in rows:
+        d = _esc_ts(r.get("created_at"))
+        if d and d > since_d:
+            r["created_at"] = d.isoformat()
+            out.append(r)
+    return sorted(out, key=lambda r: r["created_at"])
+
+@api.post("/escalations/{esc_id}/resolve")
+async def resolve_escalation(esc_id: str, body: EscalationResolveIn, user: dict = Depends(get_current_user)):
+    if not (body.note or "").strip():
+        raise HTTPException(status_code=400, detail="Please add notes")
+    q = _esc_visible(user)
+    q.update({"id": esc_id, "status": "open"})
+    esc = await db.escalations.find_one_and_update(
+        q, {"$set": {"status": "resolved", "note": body.note.strip(), "talked": bool(body.talked),
+                     "resolved_by": user["id"], "resolved_name": user.get("name", ""), "resolved_at": now_iso()}},
+        return_document=True)
+    if not esc:
+        raise HTTPException(status_code=409, detail="Already handled by someone else")
+    return clean(esc)
+
 @api.get("/exophones/recording/{sid}")
 async def exophones_recording(sid: str, user: dict = Depends(get_current_user)):
     import httpx
@@ -2224,7 +2324,13 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
     if not q or len(q) < 1:
         return {"leads": [], "customers": []}
     regex = {"$regex": re.escape(q.strip()), "$options": "i"}
-    lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]}, pool=True)
+    digits = "".join(ch for ch in q if ch.isdigit())
+    ors = [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]
+    if len(digits) >= 4:
+        d10 = digits[-10:]
+        ors.append({"phone_norm": {"$regex": re.escape(d10)}})
+        ors.append({"phone": {"$regex": r"\D*".join(re.escape(c) for c in d10)}})
+    lead_q = scope_leads(user, {"$or": ors}, pool=True)
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
     if segment:
         lead_q["segment"] = seg_match(segment)
@@ -2233,7 +2339,19 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
     if not can_view_all(user):
         cust_q["assigned_to"] = user["id"]
     custs = await db.customers.find(cust_q).to_list(10)
-    return {"leads": [clean(l) for l in leads], "customers": [clean(c) for c in custs]}
+    locked = []
+    n10 = norm_phone(digits)
+    if len(n10) == 10 and not can_view_all(user):
+        seen = {l.get("id") for l in leads}
+        oq = {"organization_id": org_of(user), "$or": [{"phone_norm": n10}, {"phone": {"$regex": r"\D*".join(n10) + r"\D*$"}}]}
+        if segment:
+            oq["segment"] = seg_match(segment)
+        for l in await db.leads.find(oq).to_list(5):
+            if l.get("id") in seen:
+                continue
+            locked.append({"id": l.get("id"), "name": l.get("name", ""), "phone": l.get("phone", ""), "status": l.get("status"),
+                           "owner": l.get("assigned_name") or ("Common Leads (not taken)" if l.get("is_common") else "Unassigned")})
+    return {"leads": [clean(l) for l in leads], "customers": [clean(c) for c in custs], "locked": locked}
 
 # ---------------------------------------------------------------------------
 # Dashboard

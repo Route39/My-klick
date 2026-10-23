@@ -24,6 +24,7 @@ import Others from "@/pages/Others";
 import Team from "@/pages/Team";
 import CallLogs from "@/pages/CallLogs";
 import ExoPhones from "@/pages/ExoPhones";
+import Escalations from "@/pages/Escalations";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="/others" element={<Others />} />
             <Route path="/calls" element={<CallLogs segment="investor" />} />
             <Route path="/exophones" element={<ExoPhones segment="investor" />} />
+            <Route path="/escalations" element={<Escalations />} />
 
             {/* Driver Routes */}
             <Route path="/drivers" element={<DriverDashboard segment="driver" />} />

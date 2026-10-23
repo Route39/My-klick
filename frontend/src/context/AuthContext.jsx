@@ -14,7 +14,7 @@ export function AuthProvider({ children }) {
     if (!token) { setUser(false); setLoading(false); return; }
     api.get("/auth/me")
       .then((r) => setUser(r.data))
-      .catch(() => { localStorage.removeItem(TOKEN_KEY); setUser(false); })
+      .catch((e) => { if (e?.response?.status === 401) { localStorage.removeItem(TOKEN_KEY); setUser(false); } else { setUser(false); } })
       .finally(() => setLoading(false));
   }, []);
 

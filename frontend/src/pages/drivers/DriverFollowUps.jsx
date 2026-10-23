@@ -108,7 +108,7 @@ function Row({ f, i, onComplete, onReschedule, onDelete, onOpen, onEdit }) {
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 sm:border-0 sm:pt-0 shrink-0">
           <div className={cn("inline-flex items-center gap-1.5 text-xs font-semibold mr-3", f.overdue ? "text-red-600" : "text-amber-600")}>
             <Clock className="h-3.5 w-3.5" />
-            {f.overdue ? `Overdue by ${hrs}h` : `${formatDay(f.due_at)} · ${formatClock(f.due_at)}`}
+            {f.overdue ? `Overdue by ${hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)} day${Math.floor(hrs / 24) > 1 ? "s" : ""}${hrs % 24 ? ` ${hrs % 24}h` : ""}`}` : `${formatDay(f.due_at)} · ${formatClock(f.due_at)}`}
           </div>
 
           <button data-testid={`call-followup-${f.id}`} onClick={() => startCall({ id: f.lead_id, name: f.lead_name, phone: f.lead_phone })}

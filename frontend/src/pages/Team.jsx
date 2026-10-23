@@ -67,7 +67,7 @@ function AddTeamMemberModal({ onSuccess }) {
           <Plus className="mr-2 h-4 w-4" /> Add Team Member
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] rounded-2xl border-0 p-0 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl border-0 p-0 shadow-2xl">
         <div className="bg-slate-900 px-6 py-4 rounded-t-2xl">
           <DialogTitle className="text-xl font-display font-bold text-white tracking-tight">Add Team Member</DialogTitle>
           <p className="text-sm text-slate-300 mt-1">Configure access for a new staff member.</p>
@@ -152,6 +152,8 @@ function AddTeamMemberModal({ onSuccess }) {
 
 function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, onToggleActive }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -167,6 +169,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
       setRole(staff.role);
       setLocation(staff.location || "");
       setJoiningDate(staff.joining_date || "");
+      setNewPassword("");
     }
   }, [staff, open, isEditing]);
 
@@ -174,14 +177,14 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
 
   const handleSave = (e) => {
     e.preventDefault();
-    onUpdate(staff.id, { name, phone, email, role, location, joining_date: joiningDate }, () => {
+    onUpdate(staff.id, { name, phone, email, role, location, joining_date: joiningDate, ...(newPassword.trim() ? { password: newPassword.trim() } : {}) }, () => {
       setIsEditing(false);
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
-      <DialogContent className="sm:max-w-[425px] rounded-2xl border-0 p-0 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl border-0 p-0 shadow-2xl">
         <div className="bg-slate-900 px-6 py-6 rounded-t-2xl flex items-center gap-4">
           <Avatar name={staff.name} size={64} />
           <div>
@@ -196,6 +199,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
               <Label className="text-slate-700 font-semibold mb-1.5 block">Full Name</Label>
               <Input value={name} onChange={e => setName(e.target.value)} className="rounded-xl border-slate-200" />
             </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
               <Input value={phone} onChange={e => setPhone(e.target.value)} className="rounded-xl border-slate-200" />
@@ -203,6 +207,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-xl border-slate-200" />
+            </div>
             </div>
             <div className="grid grid-cols-1 gap-4 m425:grid-cols-2">
               <div>
@@ -233,6 +238,15 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
                   <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Reset Password <span className="font-normal text-slate-400">(leave blank to keep)</span></Label>
+              <div className="relative">
+                <Input type={showNewPw ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password" autoComplete="new-password" className="rounded-xl border-slate-200 pr-10" />
+                <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="pt-2 flex justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => setIsEditing(false)} className="rounded-xl">Cancel</Button>
@@ -306,9 +320,11 @@ export default function Team() {
   const updateMut = useMutation({
     mutationFn: async ({ id, data }) => await api.put(`/team/${id}`, data),
     onSuccess: () => {
+      toast.success("Saved ✓");
       queryClient.invalidateQueries({ queryKey: ["team"] });
       setSelectedStaff(null);
-    }
+    },
+    onError: (e) => toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Could not save")
   });
 
   const handleDelete = (id) => {

@@ -2,9 +2,12 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, KanbanSquare, CalendarClock, UserCheck, BarChart3,
-  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox,
+  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox, AlertTriangle,
 } from "lucide-react";
 import { CommonLeadsNotifier } from "@/components/CommonLeadsNotifier";
+import { EscalationNotifier } from "@/components/EscalationNotifier";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/api";
 import { WhatsAppNotifier } from "@/components/WhatsAppNotifier";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
@@ -50,6 +53,12 @@ export default function AppShell() {
   useEffect(() => setMenuOpen(false), [location.pathname]);
   const isManager = ["admin", "team_leader"].includes(user?.role);
   const navItems = NAV;
+  const escOpen = useQuery({
+    queryKey: ["escalations", "open"],
+    queryFn: async () => (await api.get("/escalations", { params: { status: "open" } })).data,
+    refetchInterval: 15000,
+  });
+  const escCount = (escOpen.data || []).length;
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -68,6 +77,7 @@ export default function AppShell() {
     <CallProvider>
       <WhatsAppNotifier />
       <CommonLeadsNotifier />
+      <EscalationNotifier />
       <div className="min-h-screen bg-background">
         {/* ── Sidebar (desktop only) ── */}
         {menuOpen && <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-black/40 lg:hidden" />}
@@ -83,6 +93,16 @@ export default function AppShell() {
 
           {/* Nav — compact spacing so all 13 links fit without scrolling on standard laptops */}
           <nav className="min-h-0 flex-1 overflow-y-auto px-3 thin-scroll">
+
+            {/* ESCALATIONS */}
+            <NavLink to="/escalations" data-testid="nav-escalations"
+              className={({ isActive }) => cn(
+                "mb-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all",
+                isActive ? "bg-red-50 text-red-600" : "text-red-500 hover:bg-red-50"
+              )}>
+              <AlertTriangle className="h-[18px] w-[18px]" /> Escalations
+              {escCount > 0 && <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">{escCount}</span>}
+            </NavLink>
 
             {/* INVESTOR */}
             <div className="px-3 pb-2 pt-2">

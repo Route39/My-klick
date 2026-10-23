@@ -12,6 +12,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use((r) => r, (err) => {
+  const url = err?.config?.url || "";
+  if (err?.response?.status === 401 && !url.includes("/auth/login")) {
+    localStorage.removeItem(TOKEN_KEY);
+    if (!window.location.pathname.startsWith("/login")) window.location.assign("/login");
+  }
+  return Promise.reject(err);
+});
+
 export function formatApiErrorDetail(detail) {
   if (detail == null) return "Something went wrong. Please try again.";
   if (typeof detail === "string") return detail;
