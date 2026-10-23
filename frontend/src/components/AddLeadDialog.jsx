@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Rocket } from "lucide-react";
+import { Rocket, AlertTriangle, X } from "lucide-react";
 
 export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segment = "investor" }) {
   const qc = useQueryClient();
@@ -27,17 +27,19 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
   });
 
   const create = useMutation({
-    mutationFn: async () => (await api.post("/leads", { segment,
+    mutationFn: async (escData) => { const lead = (await api.post("/leads", { segment,
       ...form,
       value: Number(form.value) || 0,
       status: defaultStatus,
       assigned_to: form.assigned_to || null,
-    })).data,
+    })).data;
+    if (escData) { try { await api.post("/escalations", { lead_id: lead.id, region: escData.region, reason: escData.reason, segment }); toast.success(`Escalated to ${escData.region} team ✓`); } catch (e) { toast.error(e?.response?.data?.detail || "Lead created, but could not escalate"); } }
+    return lead; },
     onSuccess: (lead) => {
       qc.invalidateQueries();
       toast.success("Lead created ✓", { description: lead.name });
       setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "" });
-      onOpenChange(false);
+      setEsc(null); onOpenChange(false);
       navigate(`/leads/${lead.id}`);
     },
     onError: (e) => toast.error(typeof e.response?.data?.detail === "string" ? e.response.data.detail : "Could not create lead"),
@@ -46,6 +48,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
   const phoneDigits = form.phone.replace(/\D/g, "");
   const [dup, setDup] = useState(null);
+  const [esc, setEsc] = useState(null);
   useEffect(() => {
     if (phoneDigits.length < 10) { setDup(null); return; }
     const t = setTimeout(async () => {
@@ -66,7 +69,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
           <p className="text-sm text-slate-500">Add the essentials now — details later.</p>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-3"
           onSubmit={(e) => { e.preventDefault(); if (canSubmit) create.mutate(); }}
         >
           <div className="space-y-1.5">
@@ -141,11 +144,49 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
           </div>
           {dup && <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-600">This lead already taken by <b>{dup.owner}</b> — {dup.name} ({dup.segment})</p>}
           {!canSubmit && !dup && <p className="text-xs text-slate-400 text-center">Enter name and a valid 10-digit phone to continue</p>}
+          <div className="sticky bottom-0 z-10 flex items-center gap-2 bg-background pt-2 pb-1">
+            <button type="button" disabled={!canSubmit || create.isPending} onClick={() => setEsc({ region: "", reason: "" })}
+              className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">
+              <AlertTriangle className="h-3.5 w-3.5" /> Escalate
+            </button>
           <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending || !canSubmit}
-            className="w-full rounded-xl py-6 text-base font-semibold">
+            className="h-12 flex-1 rounded-xl text-base font-semibold">
             {create.isPending ? "Creating…" : "Create Lead"}
           </Button>
+          </div>
         </form>
+        {esc && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-3xl bg-black/40 p-4" onClick={() => !create.isPending && setEsc(null)}>
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Escalate lead</h3>
+                  <p className="text-sm text-slate-500">{form.name}</p>
+                </div>
+                <button type="button" onClick={() => setEsc(null)} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">Send to which state?</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {["Tamil Nadu", "Karnataka"].map((r) => (
+                  <button type="button" key={r} onClick={() => setEsc({ ...esc, region: r })}
+                    className={`rounded-xl border px-3 py-3 text-sm font-semibold ${esc.region === r ? "border-red-500 bg-red-50 text-red-600" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>{r}</button>
+                ))}
+              </div>
+              {esc.region && (
+                <>
+                  <p className="mt-4 text-sm font-medium text-slate-700">Reason</p>
+                  <textarea autoFocus value={esc.reason} onChange={(e) => setEsc({ ...esc, reason: e.target.value })} rows={3}
+                    placeholder="Why does this lead need attention?"
+                    className="mt-2 w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-red-400" />
+                  <button type="button" disabled={!esc.reason.trim() || create.isPending} onClick={() => create.mutate(esc)}
+                    className="mt-3 w-full rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                    {create.isPending ? "Sending…" : `Confirm · notify ${esc.region} team`}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

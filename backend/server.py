@@ -143,6 +143,9 @@ async def guard_admin_account(actor: dict, target_id: str = None, new_role: str 
 def is_manager(user: dict) -> bool:
     return user.get("role") in ("admin", "team_leader")
 
+def own_only(user: dict) -> bool:
+    return user.get("role") == "admin_staff"
+
 def seg_match(segment):
     return {"$in": ["investor", None]} if segment == "investor" else segment
 
@@ -172,7 +175,11 @@ def _scope_leads_core(user: dict, base: dict = None, pool: bool = False) -> dict
     Sales exec sees leads assigned to them plus unassigned leads."""
     q = dict(base or {})
     q["organization_id"] = org_of(user)
-    if not can_view_all(user):
+    if own_only(user):
+        q["$and"] = q.get("$and", []) + [
+            {"$or": [{"assigned_to": user["id"]}, {"created_by": user["id"]}]}
+        ]
+    elif not can_view_all(user):
         q["$and"] = q.get("$and", []) + [
             {"$or": [{"assigned_to": user["id"]}, {"assigned_to": None}, {"assigned_to": ""}]}
         ]
@@ -204,6 +211,8 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
     lead = await db.leads.find_one({"id": lead_id})
     if not lead or lead.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Lead not found")
+    if own_only(user) and lead.get("assigned_to") != user["id"] and lead.get("created_by") != user["id"]:
+        raise HTTPException(status_code=403, detail="You don't have access to this lead")
     if not can_view_all(user):
         # Sales exec: leads assigned to them, or unassigned leads
         assigned = lead.get("assigned_to")
@@ -1200,7 +1209,9 @@ async def lead_messages(lead_id: str, user: dict = Depends(get_current_user)):
 async def _wa_visible_lead_ids(user: dict, lead_ids: list) -> dict:
     """Leads this user may see: managers see all, staff see own + unassigned/common."""
     q = {"organization_id": org_of(user), "id": {"$in": lead_ids}}
-    if not can_view_all(user):
+    if own_only(user):
+        q["$or"] = [{"assigned_to": user["id"]}, {"created_by": user["id"]}]
+    elif not can_view_all(user):
         q["$or"] = [{"assigned_to": user["id"]}, {"assigned_to": None}]
     leads = await db.leads.find(q, {"_id": 0, "id": 1, "name": 1, "segment": 1, "is_common": 1, "assigned_to": 1}).to_list(1000)
     return {l["id"]: l for l in leads}
@@ -1395,7 +1406,7 @@ async def call_recording(call_id: str, user: dict = Depends(get_current_user)):
     call = await db.calls.find_one({"id": call_id})
     if not call or call.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Call not found")
-    if not can_view_all(user) and call.get("user_id") != user["id"]:
+    if (not can_view_all(user) or own_only(user)) and call.get("user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized to access this recording")
     if not call.get("recording_url"):
         raise HTTPException(status_code=404, detail="No recording available")
@@ -1926,7 +1937,8 @@ async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depe
 # Escalations (ExoPhones call -> state team)
 # ---------------------------------------------------------------------------
 class EscalateIn(BaseModel):
-    sid: str
+    sid: Optional[str] = None
+    lead_id: Optional[str] = None
     region: str
     reason: str
     segment: Optional[str] = "investor"
@@ -1948,12 +1960,23 @@ async def create_escalation(body: EscalateIn, user: dict = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Select Tamil Nadu or Karnataka")
     if not (body.reason or "").strip():
         raise HTTPException(status_code=400, detail="Reason is required")
-    call = await db.exo_calls.find_one({"sid": body.sid}, {"_id": 0})
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    if await db.escalations.find_one({"sid": body.sid, "status": "open"}, {"_id": 1}):
-        raise HTTPException(status_code=409, detail="This call is already escalated")
-    customer = call.get("from_number") if call.get("direction") == "incoming" else call.get("to_number")
+    if body.sid:
+        call = await db.exo_calls.find_one({"sid": body.sid}, {"_id": 0})
+        if not call:
+            raise HTTPException(status_code=404, detail="Call not found")
+        if await db.escalations.find_one({"sid": body.sid, "status": "open"}, {"_id": 1}):
+            raise HTTPException(status_code=409, detail="This call is already escalated")
+    else:
+        if not body.lead_id:
+            raise HTTPException(status_code=400, detail="Call or lead is required")
+        lead = await db.leads.find_one({"id": body.lead_id}, {"_id": 0})
+        if not lead or (lead.get("organization_id") and lead["organization_id"] != org_of(user)):
+            raise HTTPException(status_code=404, detail="Lead not found")
+        if await db.escalations.find_one({"lead_id": body.lead_id, "sid": None, "status": "open"}, {"_id": 1}):
+            raise HTTPException(status_code=409, detail="This lead is already escalated")
+        call = {"direction": "lead", "lead_id": lead["id"], "lead_name": lead.get("name", ""),
+                "from_number": lead.get("phone", ""), "outcome": "New lead"}
+    customer = call.get("from_number") if call.get("direction") in ("incoming", "lead") else call.get("to_number")
     doc = {
         "id": str(uuid.uuid4()), "organization_id": org_of(user), "sid": body.sid,
         "region": body.region, "reason": body.reason.strip(), "segment": "driver" if body.segment == "driver" else "investor",
@@ -2055,7 +2078,7 @@ async def get_exotel_calls(
         if created_filter:
             q["created_at"] = created_filter
 
-    if can_view_all(user):
+    if can_view_all(user) and not own_only(user):
         if staff_id and staff_id != "all":
             q["user_id"] = staff_id
     else:
@@ -2150,7 +2173,7 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
 @api.get("/followups")
 async def list_followups(scope: str = "all", segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"status": "pending", "organization_id": org_of(user)}
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         base["assigned_to"] = user["id"]
     if segment:
         leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
@@ -2254,7 +2277,7 @@ async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
 async def briefing(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     # Scope followups by segment if provided
     base = {"status": "pending", "organization_id": org_of(user)}
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         base["assigned_to"] = user["id"]
     if segment:
         seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
@@ -2336,7 +2359,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
 @api.get("/customers")
 async def list_customers(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"organization_id": org_of(user)}
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         base["assigned_to"] = user["id"]
     if segment:
         base["segment"] = seg_match(segment)
@@ -2351,7 +2374,7 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
     c = await db.customers.find_one({"id": cid})
     if not c or c.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Customer not found")
-    if not can_view_all(user) and c.get("assigned_to") != user["id"]:
+    if (not can_view_all(user) or own_only(user)) and c.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     c = clean(c)
     lid = c["lead_id"]
@@ -2367,7 +2390,7 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
 @api.get("/activities")
 async def activities(limit: int = 20, segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     q = {"organization_id": org_of(user)}
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         q["user_id"] = user["id"]
     if segment:
         seg_leads = await db.leads.find({"segment": seg_match(segment), "organization_id": org_of(user)}, {"_id": 0, "id": 1}).to_list(None)
@@ -2393,7 +2416,7 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
         lead_q["segment"] = seg_match(segment)
         cust_q["segment"] = seg_match(segment)
     leads = await db.leads.find(lead_q).to_list(10)
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         cust_q["assigned_to"] = user["id"]
     custs = await db.customers.find(cust_q).to_list(10)
     locked = []
@@ -2435,14 +2458,14 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
     loose = {"lead_id": None, "organization_id": org_of(user)}
     if segment:
         loose["segment"] = seg_match(segment)
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         loose["user_id"] = user["id"]
     calls_q = {"lead_id": {"$in": lead_ids}} if branch_q() else {"$or": [{"lead_id": {"$in": lead_ids}}, loose]}
     calls = await db.calls.find(calls_q, {"_id": 0, "status": 1}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
     fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}
-    if not can_view_all(user):
+    if not can_view_all(user) or own_only(user):
         fu_base["assigned_to"] = user["id"]
     followups = await db.followups.find(fu_base, {"_id": 0, "lead_id": 1, "due_at": 1}).to_list(2000)
     _fu_ok = {l["id"] for l in all_leads if l.get("status") == "follow_up"}
