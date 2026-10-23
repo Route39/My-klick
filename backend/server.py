@@ -48,6 +48,18 @@ async def branch_context(request, call_next):
     finally:
         _BRANCH.reset(token)
 
+_BRANCH_CITY = [("bangalore", "Bangalore"), ("bengaluru", "Bangalore"), ("banglore", "Bangalore"), ("chennai", "Chennai"),
+                ("coimbatore", "Coimbatore"), ("kovai", "Coimbatore"), ("tirupur", "Tiruppur"), ("tiruppur", "Tiruppur")]
+
+def branch_from(*vals) -> str:
+    """City / location text -> branch name ('' if not one of our 4 branches)."""
+    for v in vals:
+        t = (v or "").lower()
+        for k, b in _BRANCH_CITY:
+            if k in t:
+                return b
+    return ""
+
 def branch_q() -> dict:
     b = _BRANCH.get().lower()
     if not b:
@@ -116,6 +128,17 @@ def can_view_team(user: dict) -> bool:
 def can_view_all(user: dict) -> bool:
     """Access to everyone's data: admin, team leader, admin+staff."""
     return user.get("role") in ("admin", "team_leader", "admin_staff")
+
+async def guard_admin_account(actor: dict, target_id: str = None, new_role: str = None):
+    """Only a real admin can create/promote Admins or change, deactivate, delete an Admin account."""
+    if actor.get("role") == "admin":
+        return
+    if new_role == "admin":
+        raise HTTPException(status_code=403, detail="Only Admin can create or promote an Admin")
+    if target_id and target_id != actor.get("id"):
+        t = await db.users.find_one({"id": target_id}, {"_id": 0, "role": 1})
+        if t and t.get("role") == "admin":
+            raise HTTPException(status_code=403, detail="Only Admin can change an Admin account")
 
 def is_manager(user: dict) -> bool:
     return user.get("role") in ("admin", "team_leader")
@@ -382,6 +405,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
     if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Not authorized")
         
+    await guard_admin_account(user, new_role=body.role)
     existing = body.phone.strip() and await db.users.find_one({"phone": body.phone.strip()})
     if existing:
         raise HTTPException(status_code=400, detail="A user with this phone/username already exists.")
@@ -401,6 +425,7 @@ async def delete_team_member(user_id: str, user: dict = Depends(get_current_user
     if not can_view_all(user):
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    await guard_admin_account(user, user_id)
     target_user = await db.users.find_one({"id": user_id, "organization_id": org_of(user)})
     _left = await db.leads.count_documents({"assigned_to": user_id, "organization_id": org_of(user)})
     if _left:
@@ -463,6 +488,7 @@ async def set_team_active(user_id: str, body: ActiveIn, user: dict = Depends(get
         raise HTTPException(status_code=403, detail="Not authorized")
     if user_id == user["id"]:
         raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
+    await guard_admin_account(user, user_id)
     if not body.active:
         left = await db.leads.count_documents({"assigned_to": user_id, "organization_id": org_of(user)})
         if left:
@@ -482,6 +508,8 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales"
     }
     
+    if can_view_all(user):
+        await guard_admin_account(user, user_id, body.role)
     if (body.password or "").strip():
         update_data["password_hash"] = hash_password(body.password.strip())
     if not can_view_all(user):
@@ -968,7 +996,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         if _dup:
             _who = _dup.get("assigned_name") or ("Common Leads (not taken)" if _dup.get("is_common") else "Unassigned")
             raise HTTPException(status_code=409, detail=f"This number already exists — {_dup.get('name', '')} · {_who}")
-    if body.is_common and is_manager(user) and body.region not in REGIONS:
+    if body.is_common and (is_manager(user) or user.get("role") == "admin_staff") and body.region not in REGIONS:
         raise HTTPException(status_code=400, detail="Select a state (Tamil Nadu / Karnataka)")
     if not (body.name or "").strip() or len(norm_phone(body.phone)) < 10:
         raise HTTPException(status_code=400, detail="Name and a valid 10-digit phone are required")
@@ -997,7 +1025,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             "region": body.region or "", "language": body.language or "", "from_common": is_common,
             "assigned_to": actual_assigned_to, "assigned_name": actual_assigned_name,
             "value": body.value, "notes": body.notes or "", "next_followup": None,
-            "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "", "city": body.city or "", "branch": body.branch or "",
+            "no_of_vehicles": body.no_of_vehicles or "", "remarks": body.remarks or "", "city": body.city or "", "branch": body.branch or branch_from(body.city, body.location),
             "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
             "pan_url": body.pan_url or "", "license_url": body.license_url or "",
             "state": (body.state or state_of(body.location or "")),
@@ -2408,7 +2436,8 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
         loose["segment"] = seg_match(segment)
     if not can_view_all(user):
         loose["user_id"] = user["id"]
-    calls = await db.calls.find({"$or": [{"lead_id": {"$in": lead_ids}}, loose]}, {"_id": 0, "status": 1}).to_list(5000)
+    calls_q = {"lead_id": {"$in": lead_ids}} if branch_q() else {"$or": [{"lead_id": {"$in": lead_ids}}, loose]}
+    calls = await db.calls.find(calls_q, {"_id": 0, "status": 1}).to_list(5000)
     connected = len([c for c in calls if c.get("status") in comm.CONNECTED_STATES])
 
     fu_base = {"status": "pending", "organization_id": org_of(user), "lead_id": {"$in": lead_ids}}

@@ -106,7 +106,7 @@ export default function CallLogs({ segment = '' }) {
           <PhoneCall className="h-6 w-6" />
         </div>
         <div>
-          <h1 className="font-display text-3xl font-extrabold text-slate-900 tracking-tight">RouteCall Logs</h1>
+          <h1 className="font-display text-3xl font-extrabold text-slate-900 tracking-tight">Outbound Calls</h1>
           <p className="text-slate-500 mt-1">Exotel masked calls & recordings</p>
         </div>
       </div>

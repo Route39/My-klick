@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -25,6 +26,7 @@ const RANK = [
 
 
 function AddTeamMemberModal({ onSuccess }) {
+  const { user: me } = useAuth();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -120,7 +122,7 @@ function AddTeamMemberModal({ onSuccess }) {
                     <SelectItem value="sales" className="rounded-lg">Sales Exec</SelectItem>
                     <SelectItem value="team_leader" className="rounded-lg">Team Leader</SelectItem>
                   <SelectItem value="admin_staff" className="rounded-lg">Admin + Staff</SelectItem>
-                    <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
+                    {me?.role === "admin" && <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -151,6 +153,7 @@ function AddTeamMemberModal({ onSuccess }) {
 
 
 function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, onToggleActive }) {
+  const { user: me } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [showNewPw, setShowNewPw] = useState(false);
@@ -235,7 +238,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
                   <SelectItem value="sales" className="rounded-lg">Sales Exec</SelectItem>
                   <SelectItem value="team_leader" className="rounded-lg">Team Leader</SelectItem>
                   <SelectItem value="admin_staff" className="rounded-lg">Admin + Staff</SelectItem>
-                  <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>
+                  {me?.role === "admin" && <SelectItem value="admin" className="rounded-lg">Admin</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
