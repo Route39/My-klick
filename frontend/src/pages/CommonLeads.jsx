@@ -153,6 +153,7 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
                 <th className="px-4 py-3">Language</th>
                 <th className="px-4 py-3">Posted</th><th className="px-4 py-3">Taken by</th>
                 <th className="px-4 py-3">Lead Status</th>
+                <th className="px-4 py-3">Remarks</th>
                 {onClaim && <th className="px-4 py-3"></th>}
               </tr>
             </thead>
@@ -180,6 +181,9 @@ function CommonLeadsReport({ segment, endpoint = "/common-leads/report", onClaim
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700">{(r.status || "new").replace(/_/g, " ")}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {r.remarks ? <div className="max-w-[240px] truncate text-slate-600" title={r.remarks}>{r.remarks}</div> : <span className="text-xs text-slate-400">—</span>}
                   </td>
                   {onClaim && (
                     <td className="px-4 py-3 text-right">

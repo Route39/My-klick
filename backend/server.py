@@ -872,6 +872,7 @@ async def common_leads_report_mine(segment: Optional[str] = None, user: dict = D
             "assigned_to": l.get("assigned_to"), "assigned_name": l.get("assigned_name", ""),
             "claimed_at": l.get("claimed_at"), "created_at": l.get("created_at"),
             "created_by_name": l.get("created_by_name", ""),
+            "remarks": (l.get("remarks") or "") if mine_or_open else "",
         })
     return out
 
