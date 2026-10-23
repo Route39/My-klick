@@ -83,7 +83,7 @@ function AddTeamMemberModal({ onSuccess }) {
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
-              <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" required />
+              <Input value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="+91 99999 99999" className="rounded-xl border-slate-200" required />
               <p className="text-xs text-slate-500 mt-1">They will use this to log in.</p>
             </div>
             <div>
@@ -205,7 +205,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Phone / Username</Label>
-              <Input value={phone} onChange={e => setPhone(e.target.value)} className="rounded-xl border-slate-200" />
+              <Input value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl border-slate-200" />
             </div>
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Email</Label>

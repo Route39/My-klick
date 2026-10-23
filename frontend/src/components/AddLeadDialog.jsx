@@ -77,12 +77,12 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone</Label>
-              <Input data-testid="lead-phone-input" value={form.phone} onChange={(e) => set("phone")(e.target.value)}
+              <Input data-testid="lead-phone-input" value={form.phone} onChange={(e) => set("phone")(e.target.value.replace(/\D/g, "").slice(0, 10))}
                 placeholder="+91 98765 43210" className="rounded-xl" />
             </div>
             <div className="space-y-1.5">
               <Label>WhatsApp</Label>
-              <Input data-testid="lead-whatsapp-input" value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value)}
+              <Input data-testid="lead-whatsapp-input" value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value.replace(/\D/g, "").slice(0, 10))}
                 placeholder="Optional" className="rounded-xl" />
             </div>
           </div>

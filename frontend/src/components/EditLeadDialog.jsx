@@ -74,7 +74,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           {isDriver ? (<>
           <Field label="Driver Name"><Input value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
-            <Field label="Phone Number"><Input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="Phone Number"><Input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl" /></Field>
             <Field label="City"><Input value={form.location} onChange={(e) => set("location")(e.target.value)} className="rounded-xl" /></Field>
           </div>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
@@ -100,8 +100,8 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           </>) : (<>
           <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
-            <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value)} className="rounded-xl" /></Field>
-            <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value)} className="rounded-xl" /></Field>
+            <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl" /></Field>
+            <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl" /></Field>
           </div>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Email"><Input value={form.email} onChange={(e) => set("email")(e.target.value)} className="rounded-xl" /></Field>

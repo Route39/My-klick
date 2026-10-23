@@ -86,7 +86,7 @@ export function ProfileDialog({ open, onOpenChange }) {
             <label className="text-xs font-semibold uppercase text-slate-500">Phone Number (Required for Dialing)</label>
             <div className="relative">
               <Phone className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input type="tel" value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })}
+              <input type="tel" value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
                 className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
             </div>
           </div>

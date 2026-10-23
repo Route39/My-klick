@@ -107,7 +107,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone Number</Label>
-              <Input type="tel" className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. 9876543210" />
+              <Input type="tel" className="rounded-xl" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder="e.g. 9876543210" />
             </div>
             <div className="space-y-1.5">
               <Label>City</Label>

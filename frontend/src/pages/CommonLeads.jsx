@@ -41,7 +41,7 @@ function AddCommonLeadDialog({ open, onOpenChange, segment }) {
         </DialogHeader>
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
           <div><Label>Name *</Label><Input required className="rounded-xl" value={form.name} onChange={set("name")} /></div>
-          <div><Label>Phone *</Label><Input required type="tel" className="rounded-xl" value={form.phone} onChange={set("phone")} /></div>
+          <div><Label>Phone *</Label><Input required type="tel" className="rounded-xl" value={form.phone} onChange={(e) => set("phone")({ target: { value: e.target.value.replace(/\D/g, "").slice(0, 10) } })} /></div>
           <div><Label>State *</Label>
             <select required value={form.region} onChange={set("region")}
               className="h-10 w-full rounded-xl border border-input bg-transparent px-3 text-sm">
