@@ -1947,11 +1947,17 @@ class EscalationResolveIn(BaseModel):
     note: str
     talked: bool = True
 
+def _esc_region(user: dict):
+    """Escalations: admin sees every state; everyone else only their own state."""
+    if user.get("role") == "admin":
+        return None
+    return user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower()) or "__none__"
+
 def _esc_visible(user: dict) -> dict:
     q = {"organization_id": org_of(user)}
-    reg = staff_region(user)
+    reg = _esc_region(user)
     if reg:
-        q["$or"] = [{"region": reg}, {"created_by": user["id"]}]
+        q["region"] = reg  # strictly own state (even for escalations they raised)
     return q
 
 @api.post("/escalations")
@@ -1974,6 +1980,8 @@ async def create_escalation(body: EscalateIn, user: dict = Depends(get_current_u
             raise HTTPException(status_code=404, detail="Lead not found")
         if await db.escalations.find_one({"lead_id": body.lead_id, "sid": None, "status": "open"}, {"_id": 1}):
             raise HTTPException(status_code=409, detail="This lead is already escalated")
+        if not lead.get("assigned_to"):
+            await db.leads.update_one({"id": lead["id"]}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""), "is_common": False}})
         call = {"direction": "lead", "lead_id": lead["id"], "lead_name": lead.get("name", ""),
                 "from_number": lead.get("phone", ""), "outcome": "New lead"}
     customer = call.get("from_number") if call.get("direction") in ("incoming", "lead") else call.get("to_number")
@@ -1996,6 +2004,12 @@ async def list_escalations(status: str = "", user: dict = Depends(get_current_us
     if status in ("open", "resolved"):
         q["status"] = status
     rows = await db.escalations.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    ids = [r["lead_id"] for r in rows if r.get("lead_id")]
+    leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "remarks": 1, "assigned_name": 1}).to_list(len(ids) or 1)}
+    for r in rows:
+        l = leads.get(r.get("lead_id")) or {}
+        r["remarks"] = l.get("remarks", "")
+        r["lead_assigned_name"] = l.get("assigned_name", "")
     return rows
 
 def _esc_ts(v):
@@ -2009,15 +2023,12 @@ def _esc_ts(v):
 @api.get("/escalations/latest")
 async def latest_escalations(since: str, user: dict = Depends(get_current_user)):
     """Polled by staff: new open escalations for their state -> popup + sound."""
-    role = user.get("role")
-    reg = user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower())
+    reg = _esc_region(user)
     q = {"organization_id": org_of(user), "status": "open", "created_by": {"$ne": user["id"]}}
-    if role in ("admin", "admin_staff"):
-        pass  # admin: all states
-    elif reg:
-        q["region"] = reg  # team leader / staff: own state only
-    elif role != "team_leader":
+    if reg == "__none__":
         return []
+    if reg:
+        q["region"] = reg  # everyone except admin: own state only
     rows = await db.escalations.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     since_d = _esc_ts(since) or (datetime.now(timezone.utc) - timedelta(hours=12))
     out = []
@@ -2040,6 +2051,31 @@ async def resolve_escalation(esc_id: str, body: EscalationResolveIn, user: dict 
         return_document=True)
     if not esc:
         raise HTTPException(status_code=409, detail="Already handled by someone else")
+    return clean(esc)
+
+@api.post("/escalations/{esc_id}/assign")
+async def assign_escalation(esc_id: str, user: dict = Depends(get_current_user)):
+    """Assign to me: lead goes to this user (investor/driver kept) and escalation is completed."""
+    q = _esc_visible(user)
+    q.update({"id": esc_id, "status": "open"})
+    esc = await db.escalations.find_one_and_update(
+        q, {"$set": {"status": "resolved", "note": "Assigned to me", "talked": True,
+                     "resolved_by": user["id"], "resolved_name": user.get("name", ""), "resolved_at": now_iso()}},
+        return_document=True)
+    if not esc:
+        raise HTTPException(status_code=409, detail="Already assigned by someone else")
+    lead_id = esc.get("lead_id")
+    if not lead_id and esc.get("sid"):
+        try:
+            res = await exophones_claim(esc["sid"], esc.get("segment") or "investor", user)
+            lead_id = (res or {}).get("lead_id")
+        except HTTPException:
+            lead_id = None
+    if lead_id:
+        await db.leads.update_one({"id": lead_id}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
+                                                             "is_common": False, "updated_at": now_iso()}})
+        await db.escalations.update_one({"id": esc_id}, {"$set": {"lead_id": lead_id}})
+        esc["lead_id"] = lead_id
     return clean(esc)
 
 @api.get("/exophones/recording/{sid}")
