@@ -374,7 +374,11 @@ async def register(body: RegisterIn, user: dict = Depends(get_current_user)):
 @api.post("/auth/login")
 async def login(body: LoginIn):
     username = body.username.lower().strip()
-    user = await db.users.find_one({"$or": [{"email": username}, {"phone": username}]})
+    digits = "".join(c for c in username if c.isdigit())[-10:]
+    conds = [{"email": username}, {"phone": username}]
+    if len(digits) == 10:
+        conds += [{"phone": digits}, {"phone": "+91" + digits}, {"phone": "91" + digits}]
+    user = await db.users.find_one({"$or": conds})
     if not user or not verify_password(body.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid username, email or password")
     if user.get("active") is False:

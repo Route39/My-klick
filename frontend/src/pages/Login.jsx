@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Zap, Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Zap, Phone, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatApiErrorDetail } from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -66,9 +66,9 @@ export default function Login() {
 
           <form onSubmit={submit} className="mt-8 space-y-4" autoComplete="off">
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input data-testid="login-email" type="text" name="email_nope" id="myklick_email_field" value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="you@company.com or +91 99999..." required autoComplete="off" spellCheck="false" className="rounded-xl py-6 pl-10" />
+              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input data-testid="login-email" type="tel" inputMode="numeric" maxLength={10} pattern="[0-9]{10}" title="Enter 10-digit mobile number" name="email_nope" id="myklick_email_field" value={username} onChange={(e) => setUsername(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="Mobile number" required autoComplete="off" spellCheck="false" className="rounded-xl py-6 pl-10" />
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
