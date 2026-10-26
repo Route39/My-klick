@@ -834,6 +834,8 @@ def user_sees_lead(user: dict, lead: dict) -> bool:
     """Staff only see / hear common leads of their own state. Unknown state on either side -> visible."""
     if can_view_all(user):
         return True
+    if lead.get("region") in REGIONS:
+        return staff_region(user) == lead.get("region")  # region set by admin decides
     us, ls = state_of(user.get("location", "")), lead_state(lead)
     return not us or not ls or us == ls
 
