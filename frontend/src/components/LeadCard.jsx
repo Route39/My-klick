@@ -125,7 +125,14 @@ export function LeadCard({ lead, index = 0, draggable = false, onDragStart }) {
     >
       {/* Status + Priority */}
       <div className="flex items-center justify-between">
-        <StatusBadge status={lead.status} />
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={lead.status} />
+          {lead.inactive && (
+            <span data-testid={`inactive-tag-${lead.id}`} className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600">
+              Inactive
+            </span>
+          )}
+        </div>
         <PriorityBadge priority={lead.priority} />
       </div>
 

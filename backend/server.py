@@ -115,12 +115,46 @@ def staff_region(user: dict):
         return None
     return user.get("region") or LOC_REGION.get((user.get("location") or "").strip().lower()) or "__none__"
 
-def scope_leads(user: dict, base: dict = None) -> dict:
-    """Organisation + role scoping for lead queries."""
+INACTIVE_DAYS = 5
+
+def inactive_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=INACTIVE_DAYS)).isoformat()
+
+def inactive_pool_cond() -> dict:
+    """Mongo condition: inactive and not yet taken over."""
+    return {"is_common": {"$ne": True},
+            "status": {"$nin": ["converted", "lost"]},
+            "status_changed_at": {"$lte": inactive_cutoff()}}
+
+def lead_inactive(lead: dict) -> bool:
+    if lead.get("is_common"):
+        return False
+    if lead.get("status") in ("converted", "lost"):
+        return False
+    ts = lead.get("status_changed_at") or lead.get("updated_at") or lead.get("created_at")
+    try:
+        d = datetime.fromisoformat(ts)
+    except Exception:
+        return False
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - d >= timedelta(days=INACTIVE_DAYS)
+
+def scope_leads(user: dict, base: dict = None, pool: bool = False) -> dict:
+    """Organisation + role scoping. pool=True lets staff also see inactive (untaken) leads."""
     q = dict(base or {})
     q["organization_id"] = org_of(user)
-    if not can_view_all(user):
-        q["assigned_to"] = user["id"]
+    extra = []
+    if user.get("role") == "team_leader":
+        # hide leads that were taken over from the inactive pool by someone else
+        extra.append({"$or": [{"inactive_claimed": {"$ne": True}}, {"assigned_to": user["id"]}, inactive_pool_cond()]})
+    elif not can_view_all(user):
+        if pool:
+            extra.append({"$or": [{"assigned_to": user["id"]}, inactive_pool_cond()]})
+        else:
+            q["assigned_to"] = user["id"]
+    if extra:
+        q["$and"] = q.get("$and", []) + extra
     return q
 
 async def get_current_user(request: Request) -> dict:
@@ -147,11 +181,16 @@ async def lead_or_403(lead_id: str, user: dict) -> dict:
     lead = await db.leads.find_one({"id": lead_id})
     if not lead or lead.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Lead not found")
+    if lead.get("inactive_claimed") and not lead_inactive(lead) \
+            and user.get("role") not in ("admin", "admin_staff") \
+            and lead.get("assigned_to") != user["id"]:
+        raise HTTPException(status_code=403, detail="You don't have access to this lead")
     if not can_view_all(user):
-        # Staff can access leads they are assigned to OR leads they created
+        # Staff can access leads they are assigned to, created, or inactive (untaken) leads
         can_access = (
             lead.get("assigned_to") == user["id"] or
-            lead.get("created_by") == user["id"]
+            lead.get("created_by") == user["id"] or
+            lead_inactive(lead)
         )
         if not can_access:
             raise HTTPException(status_code=403, detail="You don't have access to this lead")
@@ -458,8 +497,13 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     added = await db.leads.find({"organization_id": org, "created_at": rng, "created_by": {"$ne": None},
                                  "is_common": {"$ne": True}, "from_common": {"$ne": True},
                                  "created_as_common": {"$ne": True}},
-                                {"id": 1, "created_by": 1}).to_list(100000)
-    fus = await db.followups.find({"organization_id": org, "due_at": rng}).to_list(50000)
+                                {"id": 1, "created_by": 1, "segment": 1}).to_list(100000)
+    fu_q = [{"due_at": rng}]
+    if s <= datetime.now(IST) < e:
+        # The selected period includes today: also count OVERDUE follow-ups from before the period
+        fu_q.append({"due_at": {"$lt": rng["$gte"]}, "status": "pending"})
+        fu_q.append({"due_at": {"$lt": rng["$gte"]}, "status": "completed", "completed_at": rng})
+    fus = await db.followups.find({"organization_id": org, "$or": fu_q}).to_list(50000)
 
     lead_ids = {c.get("lead_id") for c in calls if c.get("lead_id")} | {a.get("lead_id") for a in acts if a.get("lead_id")}
     leads = {l["id"]: l for l in await db.leads.find({"id": {"$in": list(lead_ids)}}).to_list(50000)} if lead_ids else {}
@@ -471,7 +515,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         return {"total_calls": 0, "connected": 0, "talk_seconds": 0, "tele_call": 0,
                 "spoke_investor": set(), "spoke_driver": set(), "prev_followup": set(),
                 "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set(),
-                "tele_ids": set(), "call_leads": set(), "added_ids": set(), "no_lead_calls": 0, "fu": []}
+                "tele_ids": set(), "call_leads": set(), "added_ids": set(), "no_lead_calls": 0, "fu": [], "fu_done_ids": set()}
     st = {}
 
     for c in calls:
@@ -529,8 +573,13 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
             st.setdefault(l["created_by"], blank())["rnr"].add(l["id"])
 
     for l in added:
-        st.setdefault(l["created_by"], blank())["added_ids"].add(l["id"])
+        x = st.setdefault(l["created_by"], blank())
+        x["added_ids"].add(l["id"])
+        # A newly created lead counts as 1 "spoke" in its segment (investor / driver)
+        x["spoke_driver" if l.get("segment") == "driver" else "spoke_investor"].add(l["id"])
     for f in fus:
+        if f.get("assigned_to") and f.get("status") == "completed":
+            st.setdefault(f["assigned_to"], blank())["fu_done_ids"].add(f.get("lead_id") or f.get("id"))
         if f.get("assigned_to"):
             st.setdefault(f["assigned_to"], blank())["fu"].append({
                 "lead_id": f.get("lead_id"), "lead_name": f.get("lead_name", ""), "due_at": f.get("due_at"),
@@ -540,9 +589,11 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
     for u in users:
         uid = u.get("id") or str(u.get("_id", ""))
         x = st.get(uid, blank())
-        logged = x["tele_ids"] | x["rnr"] | x["interested_driver"] | x["added_ids"]
-        total_calls = len(x["call_leads"] | logged) + x["no_lead_calls"]  # unique leads touched
+        logged = x["tele_ids"] | x["rnr"] | x["interested_driver"] | x["added_ids"] | x["fu_done_ids"]
         fu_list = sorted(x["fu"], key=lambda f: f.get("due_at") or "")
+        fu_done = sum(1 for f in fu_list if f["status"] == "completed")
+        # Total Calls = Follow-ups (completed) + Tele Call + Spoked Investor + Spoked Driver + Previous Follow-up (RNR is NOT included)
+        total_calls = fu_done + x["tele_call"] + len(x["spoke_investor"]) + len(x["spoke_driver"]) + len(x["prev_followup"])
         rows.append({
             "id": uid, "name": u.get("name", ""), "role": u.get("role", ""), "rnr": len(x["rnr"]),
             "location": u.get("location", ""),
@@ -622,8 +673,12 @@ async def list_leads(
             {"company": {"$regex": q, "$options": "i"}},
             {"phone": {"$regex": q, "$options": "i"}},
         ]
-    leads = await db.leads.find(scope_leads(user, base)).sort("updated_at", -1).to_list(2000)
-    return [clean(l) for l in leads]
+    leads = await db.leads.find(scope_leads(user, base, pool=True)).sort("updated_at", -1).to_list(2000)
+    out = []
+    for l in leads:
+        l["inactive"] = lead_inactive(l)
+        out.append(clean(l))
+    return out
 
 # ---------------------------------------------------------------------------
 # Common leads: admin-posted pool that any staff can see and claim
@@ -662,7 +717,7 @@ def common_query(user: dict, segment: Optional[str] = None) -> dict:
         q["segment"] = segment
     reg = staff_region(user)
     if reg:
-        q["region"] = reg
+        q["region"] = {"$in": [reg, "", None]}  # leads with no state (e.g. WhatsApp bot) are visible to all staff
     return q
 
 @api.get("/common-leads")
@@ -712,7 +767,7 @@ async def claim_common_lead(lead_id: str, user: dict = Depends(get_current_user)
     """Atomic claim: only the first staff to click gets it."""
     lead = await db.leads.find_one_and_update(
         {"id": lead_id, "organization_id": org_of(user), "is_common": True, "assigned_to": None,
-         **({"region": staff_region(user)} if staff_region(user) else {})},
+         **({"region": {"$in": [staff_region(user), "", None]}} if staff_region(user) else {})},
         {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
                   "is_common": False, "from_common": True, "claimed_at": now_iso(), "updated_at": now_iso()}},
         return_document=True,
@@ -751,7 +806,9 @@ async def set_team_region(user_id: str, body: RegionIn, user: dict = Depends(get
 
 @api.get("/leads/{lead_id}")
 async def get_lead(lead_id: str, user: dict = Depends(get_current_user)):
-    return clean(await lead_or_403(lead_id, user))
+    lead = await lead_or_403(lead_id, user)
+    lead["inactive"] = lead_inactive(lead)
+    return clean(lead)
 
 import asyncio
 
@@ -843,6 +900,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             "rc": body.rc or "", "aadhaar_url": body.aadhaar_url or "",
             "pan_url": body.pan_url or "", "license_url": body.license_url or "",
             "state": (body.state or state_of(body.location or "")),
+            "status_changed_at": now_iso(),
             "created_by": user.get("id"), "created_by_name": user.get("name", ""),
             "created_at": now_iso(), "updated_at": now_iso(),
         }
@@ -886,6 +944,13 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     update["phone_norm"] = norm_phone(body.phone)
     update["updated_at"] = now_iso()
     old_status = lead.get("status")
+    if body.status != old_status:
+        update["status_changed_at"] = now_iso()
+    if lead_inactive(lead) and body.assigned_to and body.assigned_to != lead.get("assigned_to"):
+        update["inactive_claimed"] = True
+        update["status_changed_at"] = now_iso()  # restart the 5-day timer
+        await log_activity("edit", lead, user, "took over an inactive lead",
+                           {"to": update.get("assigned_name"), "field": "assigned"})
     # Track where the lead was before entering follow_up so we can restore it later
     if body.status == "follow_up" and old_status != "follow_up":
         update["pre_followup_status"] = old_status
@@ -900,6 +965,10 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     if body.assigned_to != lead.get("assigned_to"):
         await log_activity("edit", lead, user, "reassigned lead",
                            {"from": lead.get("assigned_name"), "to": update["assigned_name"], "field": "assigned"})
+        # Move this lead's PENDING follow-ups to the new owner (Team Activity + Follow-ups page follow the owner)
+        await db.followups.update_many(
+            {"lead_id": lead_id, "status": "pending"},
+            {"$set": {"assigned_to": body.assigned_to or None, "assigned_name": update["assigned_name"], "updated_at": now_iso()}})
     if body.priority != lead.get("priority"):
         await log_activity("edit", lead, user, "changed priority",
                            {"from": lead.get("priority"), "to": body.priority, "field": "priority"})
@@ -917,6 +986,8 @@ async def change_stage(lead_id: str, body: StageIn, user: dict = Depends(get_cur
     lead = await lead_or_403(lead_id, user)
     old = lead.get("status")
     update_fields = {"status": body.status, "updated_at": now_iso()}
+    if body.status != old:
+        update_fields["status_changed_at"] = now_iso()
     # When moving INTO follow_up, save where we came from
     if body.status == "follow_up" and old != "follow_up":
         update_fields["pre_followup_status"] = old
@@ -990,9 +1061,9 @@ async def lead_messages(lead_id: str, user: dict = Depends(get_current_user)):
 async def _wa_visible_lead_ids(user: dict, lead_ids: list) -> dict:
     """Leads this user may see: managers see all, staff see own + unassigned/common."""
     q = {"organization_id": org_of(user), "id": {"$in": lead_ids}}
-    if not is_manager(user):
+    if not can_view_all(user):
         q["$or"] = [{"assigned_to": user["id"]}, {"assigned_to": None}]
-    leads = await db.leads.find(q, {"_id": 0, "id": 1, "name": 1, "segment": 1}).to_list(1000)
+    leads = await db.leads.find(q, {"_id": 0, "id": 1, "name": 1, "segment": 1, "is_common": 1, "assigned_to": 1}).to_list(1000)
     return {l["id"]: l for l in leads}
 
 @api.get("/whatsapp/latest")
@@ -1007,6 +1078,7 @@ async def whatsapp_latest(since: str, user: dict = Depends(get_current_user)):
         if l:
             out.append({"id": m["id"], "lead_id": m["lead_id"], "lead_name": l.get("name"),
                         "segment": l.get("segment") or "investor", "text": (m.get("text") or "")[:120],
+                        "is_common": bool(l.get("is_common")) and not l.get("assigned_to"),
                         "created_at": m.get("created_at")})
     last = msgs[-1]["created_at"] if msgs else since
     return {"items": out, "last": last}
@@ -1025,7 +1097,9 @@ async def whatsapp_unread_count(user: dict = Depends(get_current_user)):
 
 @api.post("/leads/{lead_id}/messages/read")
 async def whatsapp_mark_read(lead_id: str, user: dict = Depends(get_current_user)):
-    await lead_or_403(lead_id, user)
+    _l = await db.leads.find_one({"id": lead_id, "organization_id": org_of(user)})
+    if not (_l and _l.get("is_common") and not _l.get("assigned_to")):
+        await lead_or_403(lead_id, user)
     r = await db.messages.update_many({"lead_id": lead_id, "direction": "incoming", "read": False},
                                       {"$set": {"read": True}})
     return {"ok": True, "updated": r.modified_count}
@@ -1133,7 +1207,7 @@ async def complete_call(call_id: str, body: CallCompleteIn, user: dict = Depends
             new_status = "contacted"
         
         if new_status != lead.get("status"):
-            await db.leads.update_one({"id": lead["id"]}, {"$set": {"status": new_status, "updated_at": now_iso()}})
+            await db.leads.update_one({"id": lead["id"]}, {"$set": {"status": new_status, "status_changed_at": now_iso(), "updated_at": now_iso()}})
         await db.calls.update_one({"id": call_id}, {"$set": {"activity_logged": True}})
     new = await db.calls.find_one({"id": call_id})
     return clean(new)
@@ -1813,7 +1887,10 @@ async def create_followup(lead_id: str, body: FollowUpIn, user: dict = Depends(g
         "status": "pending", "created_at": now_iso(), "completed_at": None,
     }
     await db.followups.insert_one(dict(fu))
-    await db.leads.update_one({"id": lead_id}, {"$set": {"status": "follow_up", "next_followup": body.due_at, "updated_at": now_iso()}})
+    _fu_set = {"status": "follow_up", "next_followup": body.due_at, "updated_at": now_iso()}
+    if lead.get("status") != "follow_up":
+        _fu_set["status_changed_at"] = now_iso()
+    await db.leads.update_one({"id": lead_id}, {"$set": _fu_set})
     await log_activity("followup_created", lead, user, "scheduled a follow-up", {"due_at": body.due_at})
     return clean(fu)
 
@@ -1865,11 +1942,20 @@ async def complete_followup(fu_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Follow-up not found")
     await db.followups.update_one({"id": fu_id}, {"$set": {"status": "completed", "completed_at": now_iso()}})
     lead = await db.leads.find_one({"id": fu["lead_id"]}) or {"id": fu["lead_id"], "name": fu["lead_name"]}
-    # Move lead out of follow_up stage into contacted
-    if lead.get("status") == "follow_up":
-        restore_status = lead.get("pre_followup_status") or "new"
+    # Only move the lead out of follow_up stage when NO other pending follow-ups remain
+    other_pending = await db.followups.find_one(
+        {"lead_id": fu["lead_id"], "status": "pending"},
+        sort=[("due_at", 1)]
+    )
+    if not other_pending:
+        if lead.get("status") == "follow_up":
+            restore_status = lead.get("pre_followup_status") or "new"
+            await db.leads.update_one({"id": fu["lead_id"]},
+                {"$set": {"status": restore_status, "pre_followup_status": None, "status_changed_at": now_iso(), "updated_at": now_iso()}})
+    else:
+        # Lead still has pending follow-ups: keep it in follow_up and point to the earliest remaining date
         await db.leads.update_one({"id": fu["lead_id"]},
-            {"$set": {"status": restore_status, "pre_followup_status": None, "updated_at": now_iso()}})
+            {"$set": {"next_followup": other_pending["due_at"], "updated_at": now_iso()}})
     await log_activity("followup_completed", lead, user, "completed a follow-up")
     return {"ok": True}
 
@@ -1901,7 +1987,7 @@ async def delete_followup(fu_id: str, user: dict = Depends(get_current_user)):
             restore_status = lead.get("pre_followup_status") or "new"
             await db.leads.update_one(
                 {"id": fu["lead_id"]},
-                {"$set": {"status": restore_status, "pre_followup_status": None, "next_followup": None, "updated_at": now_iso()}}
+                {"$set": {"status": restore_status, "pre_followup_status": None, "next_followup": None, "status_changed_at": now_iso(), "updated_at": now_iso()}}
             )
     else:
         # Still has pending follow-ups — update next_followup to the earliest remaining
@@ -2043,7 +2129,7 @@ async def search(q: str, segment: str = "", user: dict = Depends(get_current_use
     if not q or len(q) < 1:
         return {"leads": [], "customers": []}
     regex = {"$regex": q, "$options": "i"}
-    lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]})
+    lead_q = scope_leads(user, {"$or": [{"name": regex}, {"company": regex}, {"phone": regex}, {"whatsapp": regex}]}, pool=True)
     cust_q = {"organization_id": org_of(user), "$or": [{"name": regex}, {"phone": regex}]}
     if segment:
         lead_q["segment"] = seg_match(segment)
@@ -2329,6 +2415,8 @@ async def migrate():
             pass
         if upd:
             await db.customers.update_one({"_id": c["_id"]}, {"$set": upd})
+    async for _l in db.leads.find({"status_changed_at": {"$exists": False}}, {"id": 1, "updated_at": 1, "created_at": 1}):
+        await db.leads.update_one({"id": _l["id"]}, {"$set": {"status_changed_at": _l.get("updated_at") or _l.get("created_at") or now_iso()}})
     # Clamp any future-dated demo activity timestamps (ISO strings sort lexicographically).
     _now = now_iso()
     await db.activities.update_many({"created_at": {"$gt": _now}}, {"$set": {"created_at": _now}})

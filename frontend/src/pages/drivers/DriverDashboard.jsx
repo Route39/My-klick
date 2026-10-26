@@ -184,7 +184,7 @@ function RingCard({ label, value, sub, icon: Icon, accent, rate }) {
 function Funnel({ funnel }) {
   const navigate = useNavigate();
   const max = Math.max(...STAGES.map((s) => funnel[s] || 0), 1);
-  const stages = STAGES.filter((s) => s !== "lost");
+  const stages = STAGES.filter((s) => s !== "lost" && s !== "converted");
   return (
     <Card>
       <h2 className="font-display text-lg font-bold text-slate-900">Sales Funnel</h2>

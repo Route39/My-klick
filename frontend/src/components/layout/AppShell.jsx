@@ -35,7 +35,7 @@ const DRIVER_NAV = [
   { to: "/drivers/exophones", label: "ExoPhones", icon: Phone },
   { to: "/drivers/pipeline", label: "Pipeline", icon: KanbanSquare },
   { to: "/drivers/followups", label: "Follow-ups", icon: CalendarClock },
-  { to: "/drivers/customers", label: "Converted Drivers", icon: UserCheck },
+  { to: "/drivers/customers", label: "Interested Drivers", icon: UserCheck },
 ];
 
 export default function AppShell() {

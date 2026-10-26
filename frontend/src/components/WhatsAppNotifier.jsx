@@ -76,7 +76,7 @@ export function WhatsAppNotifier({ intervalMs = 5000 }) {
   };
 
   useEffect(() => {
-    const m = location.pathname.match(/^\/leads\/([^/]+)/);
+    const m = location.pathname.match(/^\/(?:drivers\/)?leads\/([^/]+)/);
     if (m && pendingRef.current.has(m[1])) markViewed(m[1]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -96,7 +96,7 @@ export function WhatsAppNotifier({ intervalMs = 5000 }) {
         window.dispatchEvent(new CustomEvent("wa:new-messages", { detail: items }));
 
         const current = window.location.pathname;
-        const fresh = items.filter((m) => current !== `/leads/${m.lead_id}`);
+        const fresh = items.filter((m) => current !== `/leads/${m.lead_id}` && current !== `/drivers/leads/${m.lead_id}`);
         if (!fresh.length) return;
         await startRing();
         fresh.forEach((m) => {
@@ -106,7 +106,13 @@ export function WhatsAppNotifier({ intervalMs = 5000 }) {
             description: m.text,
             duration: RING_DURATION_MS,
             closeButton: true,
-            action: { label: "View", onClick: () => { markViewed(m.lead_id); navRef.current(`/leads/${m.lead_id}?tab=whatsapp`); [300, 800, 1500].forEach((ms) => setTimeout(() => document.getElementById("wa-tab-trigger")?.click(), ms)); } },
+            action: { label: "View", onClick: () => {
+              markViewed(m.lead_id);
+              const drv = m.segment === "driver";
+              if (m.is_common) { navRef.current(drv ? "/drivers/common-leads" : "/common-leads"); return; }
+              navRef.current(drv ? `/drivers/leads/${m.lead_id}?tab=whatsapp` : `/leads/${m.lead_id}?tab=whatsapp`);
+              [300, 800, 1500].forEach((ms) => setTimeout(() => document.getElementById("wa-tab-trigger")?.click(), ms));
+            } },
             onDismiss: () => markViewed(m.lead_id),
           });
           pendingRef.current.set(m.lead_id, tid);

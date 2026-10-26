@@ -12,43 +12,40 @@ import { fullINR, formatINR, formatDay } from "@/lib/constants";
 
 export default function DriverCustomers({ segment = "driver" }) {
   const navigate = useNavigate();
-  const { data = [], isLoading } = useQuery({ queryKey: ["customers", segment], queryFn: async () => (await api.get("/customers", { params: { segment } })).data });
-  const totalValue = data.reduce((a, c) => a + (c.value || 0), 0);
+  const { data = [], isLoading } = useQuery({
+    queryKey: ["leads", "interested-drivers"],
+    queryFn: async () => (await api.get("/leads", { params: { segment: "driver", status: "interested" } })).data,
+    refetchInterval: 15000,
+  });
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Converted Drivers</h1>
-          <p className="mt-1 text-slate-500">{data.length} converted drivers</p>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Interested Drivers</h1>
+          <p className="mt-1 text-slate-500">{data.length} interested drivers</p>
         </div>
-        {data.length > 0 && (
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 text-white">
-            <div className="text-xs font-medium uppercase tracking-wide text-white/80">Total revenue</div>
-            <div className="font-display text-2xl font-extrabold">{fullINR(totalValue)}</div>
-          </div>
-        )}
       </div>
 
       {isLoading ? <ListSkeleton count={4} /> : data.length === 0 ? (
-        <EmptyState icon={Trophy} title="Your first conversion is waiting." subtitle="Convert a lead to see your customers appear here." testid="customers-empty" />
+        <EmptyState icon={Trophy} title="No interested drivers yet." subtitle="Drivers whose status is Interested will appear here." testid="customers-empty" />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.3) }}
               data-testid={`customer-card-${c.id}`}
-              onClick={() => navigate(`/drivers/customers/${c.id}`)}
+              onClick={() => navigate(`/drivers/leads/${c.id}`)}
               className="cursor-pointer rounded-2xl border border-slate-200/60 bg-white p-5 card-lift">
               <div className="flex items-center gap-3">
                 <Avatar name={c.name} size={48} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-display font-bold text-slate-900">{c.name}</div>
-                  <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><UserCheck className="h-3 w-3" /> Customer</div>
+                  <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><UserCheck className="h-3 w-3" /> Interested</div>
                 </div>
               </div>
-              <div className="mt-4 rounded-xl bg-emerald-50 px-3 py-2.5 text-center">
-                <div className="font-display text-xl font-extrabold text-emerald-700">{fullINR(c.value)}</div>
-                <div className="text-[11px] text-emerald-600/70">converted {formatDay(c.converted_at)}</div>
+              <div className="mt-4 rounded-xl bg-violet-50 px-3 py-2.5 text-center">
+                <div className="font-display text-sm font-bold text-violet-700">{c.location || "—"}</div>
+                <div className="text-[11px] text-violet-600/70">updated {formatDay(c.updated_at)}</div>
               </div>
               <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                 <SourceBadge source={c.source} /><span>{c.assigned_name}</span>

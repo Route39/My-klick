@@ -14,7 +14,7 @@ import { useCall } from "@/context/CallContext";
 import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
 import { CardSkeleton } from "@/components/Skeletons";
-import { STAGES, STATUS_META, fullINR, timeAgo, formatClock, formatDay } from "@/lib/constants";
+import { STAGES, DRIVER_STAGES, STATUS_META, fullINR, timeAgo, formatClock, formatDay } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -89,7 +89,7 @@ export default function LeadProfile({ segment = "" }) {
 
   if (isLoading || !lead) return <div className="mx-auto max-w-5xl"><CardSkeleton /></div>;
 
-  if (segment && lead.segment !== segment) {
+  if (segment && (lead.segment || "investor") !== segment) {
     return (
       <div className="mx-auto max-w-lg pt-16 text-center">
         <h2 className="mt-4 font-display text-2xl font-bold text-slate-900">Lead not found here</h2>
@@ -123,6 +123,7 @@ export default function LeadProfile({ segment = "" }) {
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <StatusBadge status={lead.status} />
+              {lead.inactive && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600">Inactive</span>}
               <SourceBadge source={lead.source} />
               <span className="text-sm text-slate-400">{lead.phone}</span>
             </div>
@@ -138,7 +139,7 @@ export default function LeadProfile({ segment = "" }) {
             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-400">Change stage</label>
             <Select value={lead.status} onValueChange={(v) => stage.mutate(v)}>
               <SelectTrigger data-testid="stage-select" className="rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>{STAGES.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+              <SelectContent>{(lead.segment === "driver" ? DRIVER_STAGES : STAGES).map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -159,7 +160,7 @@ export default function LeadProfile({ segment = "" }) {
           <ActionBtn testid="profile-whatsapp" icon={MessageCircle} label="WhatsApp" color="emerald"
             onClick={() => document.getElementById("wa-tab-trigger")?.click()} />
           <ActionBtn testid="profile-followup" icon={CalendarClock} label="Follow-up" color="amber" onClick={() => setFuOpen(true)} />
-          {!converted && <ActionBtn testid="profile-convert" icon={Trophy} label="Convert" color="green" onClick={() => stage.mutate("converted")} />}
+          {!converted && lead.segment !== "driver" && <ActionBtn testid="profile-convert" icon={Trophy} label="Convert" color="green" onClick={() => stage.mutate("converted")} />}
           <ActionBtn testid="profile-edit" icon={Pencil} label="Edit" color="slate" onClick={() => setEditOpen(true)} />
           <ActionBtn testid="profile-delete" icon={Trash} label="Delete" color="red" onClick={handleDeleteLead} />
         </div>

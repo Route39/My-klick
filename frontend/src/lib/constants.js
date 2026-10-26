@@ -14,6 +14,7 @@ export const STATUS_META = {
 };
 
 export const STAGES = ["new", "contacted", "rnr", "interested", "follow_up", "converted", "lost"];
+export const DRIVER_STAGES = STAGES.filter((s) => s !== "converted");
 
 export const PRIORITY_META = {
   high:   { label: "High",   text: "text-red-700",    bg: "bg-red-50" },

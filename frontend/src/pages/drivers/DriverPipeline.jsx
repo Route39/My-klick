@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import { LeadCard } from "@/components/LeadCard";
 import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { ListSkeleton } from "@/components/Skeletons";
-import { STAGES, STATUS_META, formatINR } from "@/lib/constants";
+import { DRIVER_STAGES as STAGES, STATUS_META, formatINR } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 export default function DriverPipeline({ segment = "driver" }) {
@@ -64,7 +64,7 @@ export default function DriverPipeline({ segment = "driver" }) {
     <div className="mx-auto max-w-[1600px]">
       <div className="mb-6">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Pipeline</h1>
-        <p className="mt-1 text-slate-500">Drag leads across stages. Drop into Converted for the win ✨</p>
+        <p className="mt-1 text-slate-500">Drag leads across stages.</p>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-6 thin-scroll" data-testid="pipeline-board">
         {STAGES.map((s) => {

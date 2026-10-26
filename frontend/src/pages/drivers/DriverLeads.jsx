@@ -9,7 +9,7 @@ import { Avatar } from "@/components/InitialsAvatar";
 import { StatusBadge, PriorityBadge, SourceBadge } from "@/components/Badges";
 import { EmptyState } from "@/components/EmptyState";
 import { ListSkeleton } from "@/components/Skeletons";
-import { STAGES, STATUS_META, formatINR, formatClock, formatDay } from "@/lib/constants";
+import { DRIVER_STAGES as STAGES, STATUS_META, formatINR, formatClock, formatDay } from "@/lib/constants";
 import { useCall } from "@/context/CallContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

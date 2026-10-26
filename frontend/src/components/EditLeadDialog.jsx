@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api, { formatApiErrorDetail } from "@/lib/api";
-import { SOURCES, SOURCE_META, STAGES, STATUS_META } from "@/lib/constants";
+import { SOURCES, SOURCE_META, STAGES, DRIVER_STAGES, STATUS_META } from "@/lib/constants";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,7 +78,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Assigned to">
+            <Field label={lead?.inactive ? "Assigned to (inactive: reassign & save)" : "Assigned to"}>
               <Select value={form.assigned_to} onValueChange={set("assigned_to")}>
                 <SelectTrigger data-testid="edit-assign" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>{users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent>
@@ -87,7 +87,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
             <Field label="Status">
               <Select value={form.status} onValueChange={set("status")}>
                 <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+                <SelectContent>{(form.segment === "driver" ? DRIVER_STAGES : STAGES).map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
           </div>
