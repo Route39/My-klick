@@ -57,6 +57,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
     return () => clearTimeout(t);
   }, [phoneDigits, segment]);
   const canSubmit = form.name.trim().length > 0 && phoneDigits.length >= 10 && !dup;
+  const canCreate = canSubmit && !!form.assigned_to;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,7 +71,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
         </DialogHeader>
         <form
           className="space-y-3"
-          onSubmit={(e) => { e.preventDefault(); if (canSubmit) create.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (canCreate) create.mutate(); }}
         >
           <div className="space-y-1.5">
             <Label>Name</Label>
@@ -144,12 +145,13 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
           </div>
           {dup && <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-600">This lead already taken by <b>{dup.owner}</b> — {dup.name} ({dup.segment})</p>}
           {!canSubmit && !dup && <p className="text-xs text-slate-400 text-center">Enter name and a valid 10-digit phone to continue</p>}
+          {canSubmit && !dup && !form.assigned_to && <p className="text-xs text-amber-600 text-center">Assign this lead to someone to continue</p>}
           <div className="sticky bottom-0 z-10 flex items-center gap-2 bg-background pt-2 pb-1">
             <button type="button" disabled={!canSubmit || create.isPending} onClick={() => setEsc({ region: "", reason: "" })}
               className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">
               <AlertTriangle className="h-3.5 w-3.5" /> Escalate
             </button>
-          <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending || !canSubmit}
+          <Button data-testid="create-lead-submit" type="submit" disabled={create.isPending || !canCreate}
             className="h-12 flex-1 rounded-xl text-base font-semibold">
             {create.isPending ? "Creating…" : "Create Lead"}
           </Button>

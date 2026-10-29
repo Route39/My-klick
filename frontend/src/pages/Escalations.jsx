@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Clock, MapPin, Phone, PhoneIncoming, PhoneOutgoing, Timer, User, UserCheck, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, MapPin, Phone, PhoneIncoming, PhoneOutgoing, Timer, User, UserCheck, UserPlus, XCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -122,12 +122,19 @@ function Summary({ items }) {
 
 function AdminTable({ rows }) {
   const [openId, setOpenId] = useState(null);
+  const [confirmRow, setConfirmRow] = useState(null);
+  const qc = useQueryClient();
+  const del = useMutation({
+    mutationFn: async (id) => (await api.delete(`/escalations/${id}`)).data,
+    onSuccess: (r) => { setConfirmRow(null); qc.invalidateQueries(); toast.success(r.lead_deleted ? "Lead & escalation deleted" : "Escalation deleted"); },
+    onError: (err) => toast.error(err?.response?.data?.detail || "Could not delete"),
+  });
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[980px] text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-            {["Customer", "Type", "State", "Reason", "Raised by", "Pending", "Status", "Assigned to"].map((h) => (
+            {["Customer", "Type", "State", "Reason", "Raised by", "Pending", "Status", "Assigned to", ""].map((h) => (
               <th key={h} className="px-4 py-3">{h}</th>
             ))}
           </tr>
@@ -176,10 +183,11 @@ function AdminTable({ rows }) {
                       </div>
                     )}
                   </td>
+                <td className="px-4 py-3 text-right"><button type="button" title="Delete lead" disabled={del.isPending} onClick={(ev) => { ev.stopPropagation(); setConfirmRow(e); }} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></td>
                 </tr>
                 {expanded && (
                   <tr className="bg-slate-50/70">
-                    <td colSpan={8} className="px-4 py-4">
+                    <td colSpan={9} className="px-4 py-4">
                       <div className="grid gap-3 text-sm md:grid-cols-3">
                         <div className="rounded-xl border border-slate-100 bg-white p-3">
                           <div className="mb-1 text-xs font-semibold uppercase text-slate-400">Call</div>
@@ -212,6 +220,19 @@ function AdminTable({ rows }) {
           })}
         </tbody>
       </table>
+        {confirmRow && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !del.isPending && setConfirmRow(null)}>
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600"><Trash2 className="h-5 w-5" /></div>
+              <h3 className="text-center text-lg font-bold text-slate-900">{confirmRow.lead_id ? "Delete lead?" : "Delete escalation?"}</h3>
+              <p className="mt-1 text-center text-sm text-slate-500"><b>{confirmRow.lead_name || confirmRow.customer_number}</b>{confirmRow.lead_id ? " — lead and its escalation will be deleted. This cannot be undone." : " — this escalation will be deleted."}</p>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button type="button" disabled={del.isPending} onClick={() => setConfirmRow(null)} className="rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="button" disabled={del.isPending} onClick={() => del.mutate(confirmRow.id)} className="rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">{del.isPending ? "Deleting…" : "Delete"}</button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

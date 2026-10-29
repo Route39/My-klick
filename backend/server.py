@@ -2084,6 +2084,21 @@ async def assign_escalation(esc_id: str, user: dict = Depends(get_current_user))
         esc["lead_id"] = lead_id
     return clean(esc)
 
+@api.delete("/escalations/{esc_id}")
+async def delete_escalation(esc_id: str, user: dict = Depends(get_current_user)):
+    """Admin: delete escalation + its lead (if any)."""
+    if user.get("role") not in ("admin", "admin_staff"):
+        raise HTTPException(status_code=403, detail="Only admin can delete")
+    esc = await db.escalations.find_one({"id": esc_id}, {"_id": 0})
+    if not esc:
+        raise HTTPException(status_code=404, detail="Escalation not found")
+    lead_id = esc.get("lead_id")
+    if lead_id:
+        await db.leads.delete_one({"id": lead_id})
+        await db.escalations.delete_many({"lead_id": lead_id})
+    await db.escalations.delete_one({"id": esc_id})
+    return {"ok": True, "lead_deleted": bool(lead_id)}
+
 @api.get("/exophones/recording/{sid}")
 async def exophones_recording(sid: str, user: dict = Depends(get_current_user)):
     import httpx
