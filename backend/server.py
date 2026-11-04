@@ -1106,6 +1106,9 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
         update["pre_followup_status"] = None
     await db.leads.update_one({"id": lead_id}, {"$set": update})
 
+    # Keep the converted customer's cash value in sync with the lead
+    await db.customers.update_many({"lead_id": lead_id}, {"$set": {"value": body.value}})
+
     # Record meaningful edits in the timeline.
     if body.value != lead.get("value"):
         await log_activity("edit", lead, user, "changed lead value",
@@ -2416,7 +2419,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
 @api.get("/customers")
 async def list_customers(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"organization_id": org_of(user)}
-    if not can_view_all(user) or own_only(user):
+    if not can_view_all(user):
         base["assigned_to"] = user["id"]
     if segment:
         base["segment"] = seg_match(segment)
@@ -2431,7 +2434,7 @@ async def get_customer(cid: str, user: dict = Depends(get_current_user)):
     c = await db.customers.find_one({"id": cid})
     if not c or c.get("organization_id", DEFAULT_ORG) != org_of(user):
         raise HTTPException(status_code=404, detail="Customer not found")
-    if (not can_view_all(user) or own_only(user)) and c.get("assigned_to") != user["id"]:
+    if not can_view_all(user) and c.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     c = clean(c)
     lid = c["lead_id"]
