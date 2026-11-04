@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { SOURCES, SOURCE_META } from "@/lib/constants";
+import { SOURCES, SOURCE_META, STAGES, STATUS_META } from "@/lib/constants";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -19,7 +19,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "",
+    name: "", phone: "", whatsapp: "", email: "", status: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "",
   });
 
   const { data: users = [] } = useQuery({
@@ -30,7 +30,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
     mutationFn: async (escData) => { const lead = (await api.post("/leads", { segment,
       ...form,
       value: Number(form.value) || 0,
-      status: defaultStatus,
+      status: form.status || defaultStatus,
       assigned_to: form.assigned_to || null,
     })).data;
     if (escData) { try { await api.post("/escalations", { lead_id: lead.id, region: escData.region, reason: escData.reason, segment }); toast.success(`Escalated to ${escData.region} team ✓`); } catch (e) { toast.error(e?.response?.data?.detail || "Lead created, but could not escalate"); } }
@@ -38,7 +38,7 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
     onSuccess: (lead) => {
       qc.invalidateQueries();
       toast.success("Lead created ✓", { description: lead.name });
-      setForm({ name: "", phone: "", whatsapp: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "" });
+      setForm({ name: "", phone: "", whatsapp: "", email: "", status: "", source: "manual", assigned_to: "", value: "", no_of_vehicles: "", location: "", branch: "", remarks: "" });
       setEsc(null); onOpenChange(false);
       navigate(`/leads/${lead.id}`);
     },
@@ -118,6 +118,22 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
                 <SelectTrigger data-testid="lead-assign-select" className="rounded-xl"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
                   {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <Input data-testid="lead-email-input" type="email" value={form.email} onChange={(e) => set("email")(e.target.value)}
+                placeholder="Optional" className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={form.status || defaultStatus} onValueChange={set("status")}>
+                <SelectTrigger data-testid="lead-status-select" className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STAGES.filter((s) => s !== "converted").map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
