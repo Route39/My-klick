@@ -415,7 +415,7 @@ async def list_users(user: dict = Depends(get_current_user)):
 
 @api.post("/team")
 async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_user)):
-    if not can_view_all(user):
+    if not can_view_all(user) or user.get("role") == "admin_staff":
         raise HTTPException(status_code=403, detail="Not authorized")
         
     await guard_admin_account(user, new_role=body.role)
@@ -424,7 +424,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
         raise HTTPException(status_code=400, detail="A user with this phone/username already exists.")
         
     doc = {
-        "id": str(uuid.uuid4()), "name": body.name, "email": body.email.lower().strip(), "phone": body.phone.strip(),
+        "id": str(uuid.uuid4()), "name": body.name, "email": (body.email or "").lower().strip(), "phone": body.phone.strip(),
         "password_hash": hash_password(body.password or "password123"),
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales",
         "organization_id": org_of(user), "avatar": None, "created_at": now_iso(),
@@ -435,7 +435,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
 
 @api.delete("/team/{user_id}")
 async def delete_team_member(user_id: str, user: dict = Depends(get_current_user)):
-    if not can_view_all(user):
+    if not can_view_all(user) or user.get("role") == "admin_staff":
         raise HTTPException(status_code=403, detail="Not authorized")
     
     await guard_admin_account(user, user_id)
@@ -517,7 +517,7 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
     update_data = {
         "name": body.name,
         "phone": body.phone.strip(),
-        "email": body.email.lower().strip(),
+        "email": (body.email or "").lower().strip(),
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales"
     }
     
@@ -635,7 +635,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         return {"total_calls": 0, "connected": 0, "talk_seconds": 0, "tele_call": 0,
                 "spoke_investor": set(), "spoke_driver": set(), "prev_followup": set(),
                 "conv_investor": set(), "interested_driver": set(), "payment": 0.0, "rnr": set(),
-                "tele_ids": set(), "call_leads": set(), "added_ids": set(), "no_lead_calls": 0, "fu": [], "fu_done_ids": set()}
+                "tele_ids": set(), "call_leads": set(), "added_ids": set(), "no_lead_calls": 0, "fu": [], "fu_done_ids": set(), "fu_status": {}}
     st = {}
 
     for c in calls:
@@ -663,7 +663,7 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
         x = st.setdefault(a["user_id"], blank())
         lid = a.get("lead_id")
         seg = (leads.get(lid) or {}).get("segment") or "investor"
-        if a.get("type") == "converted" and seg == "investor" and lid not in x["conv_investor"]:
+        if a.get("type") == "converted" and seg == "investor" and lid not in x["conv_investor"] and (leads.get(lid) or {}).get("status") == "converted":
             x["conv_investor"].add(lid)
             try:
                 x["payment"] += float((a.get("meta") or {}).get("value") or 0)
@@ -673,6 +673,8 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
             x["interested_driver"].add(lid)
         if a.get("type") == "status_change" and (a.get("meta") or {}).get("to") == "rnr" and lid:
             x["rnr"].add(lid)
+        if a.get("type") == "status_change" and (a.get("meta") or {}).get("to") == "follow_up" and lid and (leads.get(lid) or {}).get("status") == "follow_up":
+            x["fu_status"][lid] = a.get("created_at")  # status changed to Follow-up
 
     for l in created:
         if l.get("assigned_to"):
@@ -705,6 +707,12 @@ async def team_activity(period: str = "today", start: str = "", end: str = "",
                 "lead_id": f.get("lead_id"), "lead_name": f.get("lead_name", ""), "due_at": f.get("due_at"),
                 "status": f.get("status", "pending"), "reason": f.get("reason", "")})
 
+    for x in st.values():  # count status->Follow-up leads in Follow-ups (once per lead)
+        have = {f.get("lead_id") for f in x["fu"]}
+        for lid, at in x.get("fu_status", {}).items():
+            if lid not in have:
+                x["fu"].append({"lead_id": lid, "lead_name": (leads.get(lid) or {}).get("name", ""), "due_at": at,
+                                "status": "pending", "reason": "Status changed to Follow-up"})
     rows = []
     for u in users:
         uid = u.get("id") or str(u.get("_id", ""))
@@ -1202,6 +1210,7 @@ async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     await db.calls.delete_many({"lead_id": lead_id})
     await db.messages.delete_many({"lead_id": lead_id})
     await db.followups.delete_many({"lead_id": lead_id})
+    await db.customers.delete_many({"lead_id": lead_id})  # remove from Converted Drivers too
     return {"ok": True}
 
 @api.get("/leads/{lead_id}/timeline")
@@ -2416,6 +2425,13 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
 # ---------------------------------------------------------------------------
 # Customers
 # ---------------------------------------------------------------------------
+@api.delete("/customers/{cid}")
+async def delete_customer(cid: str, user: dict = Depends(get_current_user)):
+    r = await db.customers.delete_one({"id": cid})
+    if not r.deleted_count:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {"ok": True}
+
 @api.get("/customers")
 async def list_customers(segment: Optional[str] = None, user: dict = Depends(get_current_user)):
     base = {"organization_id": org_of(user)}
@@ -2426,7 +2442,10 @@ async def list_customers(segment: Optional[str] = None, user: dict = Depends(get
     if branch_q():
         _bl = await db.leads.find({"organization_id": org_of(user), **branch_q()}, {"_id": 0, "id": 1}).to_list(None)
         base["lead_id"] = {"$in": [l["id"] for l in _bl]}
+    _conv = await db.leads.find({"organization_id": org_of(user), "status": "converted"}, {"_id": 0, "id": 1}).to_list(None)
+    _ok = {l["id"] for l in _conv}
     cs = await db.customers.find(base).sort("converted_at", -1).to_list(1000)
+    cs = [c for c in cs if not c.get("lead_id") or c["lead_id"] in _ok]  # match Leads > Converted count
     return [clean(c) for c in cs]
 
 @api.get("/customers/{cid}")
@@ -2873,3 +2892,7 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
+
+# Trim spaces from all JSON inputs and search queries
+from trim_middleware import TrimMiddleware
+app.add_middleware(TrimMiddleware)

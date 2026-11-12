@@ -12,6 +12,8 @@ import { SourceBadge } from "@/components/Badges";
 import { CardSkeleton } from "@/components/Skeletons";
 import { fullINR, formatDay, formatClock } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { Trash2 as TrashIcon } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const ACT_ICON = { lead_created: UserPlus, converted: PartyPopper, call: Phone, whatsapp: MessageCircle, followup_created: CalendarClock, followup_completed: CheckCircle2, status_change: Repeat, edit: Repeat };
@@ -19,6 +21,14 @@ const ACT_ICON = { lead_created: UserPlus, converted: PartyPopper, call: Phone, 
 export default function CustomerDetail({ segment = "" }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const delCust = async () => {
+    if (!window.confirm(`Delete ${c.name}? This also deletes the linked lead.`)) return;
+    try { if (c.lead_id) await api.delete(`/leads/${c.lead_id}`); else throw 0; }
+    catch { await api.delete(`/customers/${c.id}`).catch(() => {}); }
+    qc.invalidateQueries();
+    navigate(segment === "driver" ? "/drivers/customers" : "/customers");
+  };
   const { data: c, isLoading } = useQuery({ queryKey: ["customer", id], queryFn: async () => (await api.get(`/customers/${id}`)).data });
 
   if (isLoading || !c) return <div className="mx-auto max-w-5xl"><CardSkeleton /></div>;
@@ -53,6 +63,7 @@ export default function CustomerDetail({ segment = "" }) {
           <div className="flex-1">
             <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-600"><Trophy className="h-3 w-3" /> CUSTOMER</div>
             <h1 className="mt-2 font-display text-3xl font-extrabold tracking-tight text-slate-900">{c.name}</h1>
+            <button onClick={delCust} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><TrashIcon className="h-3.5 w-3.5" /> Delete</button>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {c.phone}</span>
               {c.email && <span className="inline-flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {c.email}</span>}

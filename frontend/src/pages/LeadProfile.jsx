@@ -137,7 +137,7 @@ export default function LeadProfile({ segment = "" }) {
           </div>
           <div className="w-full sm:w-56">
             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-400">Change stage</label>
-            <Select value={lead.status} onValueChange={(v) => stage.mutate(v)}>
+            <Select value={lead.status} onValueChange={(v) => { if (lead.status === "converted" && v !== "converted" && !window.confirm("This lead is already Converted. Move it to another stage?")) return; stage.mutate(v); }}>
               <SelectTrigger data-testid="stage-select" className="rounded-xl"><SelectValue /></SelectTrigger>
               <SelectContent>{(lead.segment === "driver" ? DRIVER_STAGES : STAGES).map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
             </Select>
@@ -269,7 +269,7 @@ function Timeline({ id }) {
             <motion.div key={a.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="relative">
               <span className="absolute -left-8 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-primary ring-4 ring-white"><Icon className="h-3.5 w-3.5" /></span>
               <div className="text-xs text-slate-400">{formatDay(a.created_at)} · {formatClock(a.created_at)}</div>
-              <div className="mt-0.5 text-sm text-slate-800"><b>{a.user_name}</b> {a.text}
+              <div className="mt-0.5 text-sm text-slate-800"><b>{a.user_name}</b> {a.type === "status_change" && a.meta?.to ? `moved lead ${STATUS_META[a.meta.from]?.label || a.meta.from || "—"} → ${STATUS_META[a.meta.to]?.label || a.meta.to}` : a.text}
                 {a.meta?.duration && <span className="text-slate-500"> · {a.meta.duration}</span>}
                 {a.meta?.text && <span className="text-slate-500"> · "{a.meta.text}"</span>}</div>
             </motion.div>
