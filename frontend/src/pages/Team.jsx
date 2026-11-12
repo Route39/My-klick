@@ -62,6 +62,7 @@ function AddTeamMemberModal({ onSuccess }) {
     addMut.mutate({ name, phone, email, password, role, location, joining_date: joiningDate });
   };
 
+  if (me?.role === "admin_staff") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

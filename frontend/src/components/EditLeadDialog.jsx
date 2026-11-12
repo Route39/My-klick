@@ -99,6 +99,7 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
           </Field>
           </>) : (<>
           <Field label="Name"><Input data-testid="edit-name" value={form.name} onChange={(e) => set("name")(e.target.value)} className="rounded-xl" /></Field>
+          <Field label="Company"><Input value={form.company || ""} onChange={(e) => set("company")(e.target.value)} className="rounded-xl" /></Field>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <Field label="Phone"><Input data-testid="edit-phone" value={form.phone} onChange={(e) => set("phone")(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl" /></Field>
             <Field label="WhatsApp"><Input value={form.whatsapp} onChange={(e) => set("whatsapp")(e.target.value.replace(/\D/g, "").slice(0, 10))} className="rounded-xl" /></Field>
@@ -149,7 +150,6 @@ export function EditLeadDialog({ open, onOpenChange, lead }) {
               </Select>
             </Field>
           </div>
-          {!isDriver && <Field label="Notes"><Textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} className="rounded-xl" rows={3} /></Field>}
           <Field label="Remarks"><Input data-testid="edit-remarks" value={form.remarks} onChange={(e) => set("remarks")(e.target.value)} className="rounded-xl" /></Field>
           <Button data-testid="edit-lead-submit" type="submit" disabled={save.isPending} className="w-full rounded-xl py-6 text-base font-semibold">
             {save.isPending ? "Saving…" : "Save Changes"}

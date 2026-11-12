@@ -78,6 +78,10 @@ export function AddLeadDialog({ open, onOpenChange, defaultStatus = "new", segme
             <Input data-testid="lead-name-input" value={form.name} onChange={(e) => set("name")(e.target.value)}
               placeholder="Kumar Traders" className="rounded-xl" />
           </div>
+          <div className="space-y-1.5">
+            <Label>Company</Label>
+            <Input value={form.company || ""} onChange={(e) => set("company")(e.target.value)} className="rounded-xl" />
+          </div>
           <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Phone</Label>

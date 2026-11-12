@@ -36,7 +36,7 @@ export function TransferLeadsDialog({ staff, open, onOpenChange }) {
   const shown = useMemo(() => leads.filter((l) =>
     (seg === "all" || (l.segment || "investor") === seg) &&
     (status === "all" || l.status === status) &&
-    (!q || `${l.name} ${l.phone}`.toLowerCase().includes(q.toLowerCase()))
+    (!q || `${l.name} ${l.phone}`.toLowerCase().includes(q.trim().toLowerCase()))
   ), [leads, seg, status, q]);
   const allShownPicked = shown.length > 0 && shown.every((l) => picked.has(l.id));
 
