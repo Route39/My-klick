@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, KanbanSquare, CalendarClock, UserCheck, BarChart3,
-  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox, AlertTriangle,
-} from "lucide-react";
+  Search, Plus, LogOut, Menu, MoreHorizontal, Zap, Phone, Inbox, AlertTriangle, MessageCircle } from "lucide-react";
 import { CommonLeadsNotifier } from "@/components/CommonLeadsNotifier";
 import { EscalationNotifier } from "@/components/EscalationNotifier";
 import { useQuery } from "@tanstack/react-query";
@@ -103,6 +102,13 @@ export default function AppShell() {
               )}>
               <AlertTriangle className="h-[18px] w-[18px]" /> Escalations
               {escCount > 0 && <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">{escCount}</span>}
+            </NavLink>
+            <NavLink to="/whatsapp-inbox" data-testid="nav-wa-inbox"
+              className={({ isActive }) => cn(
+                "mb-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all",
+                isActive ? "bg-emerald-50 text-emerald-700" : "text-emerald-600 hover:bg-emerald-50"
+              )}>
+              <MessageCircle className="h-[18px] w-[18px]" /> WhatsApp Inbox
             </NavLink>
 
             {/* INVESTOR */}

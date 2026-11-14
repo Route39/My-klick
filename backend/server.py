@@ -2877,6 +2877,8 @@ async def root():
     return {"message": "MyKlick CRM API"}
 
 app.include_router(api)
+from chat360_inbox import build_router as _wa_inbox_router
+app.include_router(_wa_inbox_router(get_current_user))
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 

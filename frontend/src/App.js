@@ -25,6 +25,7 @@ import Team from "@/pages/Team";
 import CallLogs from "@/pages/CallLogs";
 import ExoPhones from "@/pages/ExoPhones";
 import Escalations from "@/pages/Escalations";
+import WhatsAppInbox from "@/pages/WhatsAppInbox";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/calls" element={<CallLogs segment="investor" />} />
             <Route path="/exophones" element={<ExoPhones segment="investor" />} />
             <Route path="/escalations" element={<Escalations />} />
+            <Route path="/whatsapp-inbox" element={<WhatsAppInbox />} />
 
             {/* Driver Routes */}
             <Route path="/drivers" element={<DriverDashboard segment="driver" />} />
