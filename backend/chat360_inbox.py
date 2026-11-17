@@ -10,7 +10,7 @@ class ReplyIn(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
 
 
-def build_router(get_current_user):
+def build_router(get_current_user, wa_filter=None):
     r = APIRouter(prefix="/api/wa-inbox", tags=["WA Inbox"])
 
     async def call(method, path, **kw):
@@ -29,14 +29,24 @@ def build_router(get_current_user):
         p = {"page": page, "limit": limit}
         if status:
             p["status"] = status
-        return await call("GET", "/conversations", params=p)
+        res = await call("GET", "/conversations", params=p)
+        if wa_filter and isinstance(res.get("data"), list):
+            res["data"] = await wa_filter(res["data"], user)
+        return res
 
     @r.get("/conversations/{cid}")
     async def get_conv(cid: str, user=Depends(get_current_user)):
-        return await call("GET", f"/conversations/{cid}")
+        res = await call("GET", f"/conversations/{cid}")
+        if wa_filter and res.get("data") and not await wa_filter([res["data"]], user):
+            raise HTTPException(403, "This chat is assigned to another staff")
+        return res
 
     @r.post("/conversations/{cid}/reply")
     async def reply(cid: str, body: ReplyIn, user=Depends(get_current_user)):
+        if wa_filter:
+            cur = await call("GET", f"/conversations/{cid}")
+            if cur.get("data") and not await wa_filter([cur["data"]], user):
+                raise HTTPException(403, "This chat is assigned to another staff")
         return await call("POST", f"/conversations/{cid}/reply", json={"text": body.text})
 
     return r

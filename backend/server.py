@@ -2878,7 +2878,84 @@ async def root():
 
 app.include_router(api)
 from chat360_inbox import build_router as _wa_inbox_router
-app.include_router(_wa_inbox_router(get_current_user))
+async def wa_inbox_filter(convs, user):
+    ids = [c.get("id") for c in convs if c.get("id")]
+    if not ids:
+        return convs
+    taken = {}
+    async for l in db.leads.find({"organization_id": org_of(user), "wa_conv_id": {"$in": ids}, "assigned_to": {"$ne": None}},
+                                 {"_id": 0, "wa_conv_id": 1, "assigned_to": 1, "assigned_name": 1, "segment": 1}):
+        taken[l["wa_conv_id"]] = l
+    admin = user.get("role") == "admin"
+    out = []
+    for c in convs:
+        l = taken.get(c.get("id"))
+        if l:
+            mine = l.get("assigned_to") == user["id"]
+            if not (admin or mine):
+                continue
+            c = {**c, "assigned_name": "You" if mine else (l.get("assigned_name") or "Staff"),
+                 "assigned_segment": l.get("segment") or "investor"}
+        out.append(c)
+    return out
+
+app.include_router(_wa_inbox_router(get_current_user, wa_inbox_filter))
+
+class WaAssignIn(BaseModel):
+    segment: str = "investor"
+
+@app.post("/api/wa-inbox/conversations/{cid}/assign-to-me")
+async def wa_assign_to_me(cid: str, body: WaAssignIn, user: dict = Depends(get_current_user)):
+    import httpx
+    seg = "driver" if body.segment == "driver" else "investor"
+    key = os.environ.get("CHAT360_API_KEY", "")
+    base = os.environ.get("CHAT360_API_BASE", "https://chat360.attendy.in").rstrip("/")
+    if not key:
+        raise HTTPException(503, "CHAT360_API_KEY not set")
+    async with httpx.AsyncClient(timeout=20) as c:
+        res = await c.get(f"{base}/api/v1/conversations/{cid}", headers={"X-API-Key": key})
+    if res.status_code >= 400:
+        raise HTTPException(res.status_code, res.text[:300])
+    conv = (res.json() or {}).get("data") or {}
+    phone = norm_phone(conv.get("contact_phone") or "")
+    if len(phone) < 10:
+        raise HTTPException(400, "No valid phone number on this chat")
+    name = (conv.get("contact_name") or "").strip() or phone
+    me = {"assigned_to": user["id"], "assigned_name": user.get("name", "")}
+    _t = await db.leads.find_one({"organization_id": org_of(user), "wa_conv_id": cid, "assigned_to": {"$nin": [None, user["id"]]}})
+    if _t:
+        raise HTTPException(409, f"Already taken by {_t.get('assigned_name') or 'another staff'}")
+    lead = await db.leads.find_one({"organization_id": org_of(user), "phone_norm": phone, "segment": seg_match(seg)})
+    if lead:
+        if lead.get("assigned_to") == user["id"]:
+            await db.leads.update_one({"id": lead["id"]}, {"$set": {"wa_conv_id": cid}})
+            return {"ok": True, "message": "Already in your leads", "lead": clean(lead)}
+        if lead.get("assigned_to"):
+            raise HTTPException(409, f"Already assigned to {lead.get('assigned_name') or 'another staff'}")
+        lead = await db.leads.find_one_and_update(
+            {"id": lead["id"], "assigned_to": None},
+            {"$set": {**me, "wa_conv_id": cid, "is_common": False, "claimed_at": now_iso(), "updated_at": now_iso()}},
+            return_document=True)
+        if not lead:
+            raise HTTPException(409, "Someone else just took this lead")
+        await db.followups.update_many({"lead_id": lead["id"], "assigned_to": None}, {"$set": me})
+        await log_activity("lead_claimed", lead, user, "assigned a WhatsApp lead to themselves")
+        return {"ok": True, "message": "Moved to your leads", "lead": clean(lead)}
+    lead = {
+        "id": str(uuid.uuid4()), "organization_id": org_of(user), "name": name, "company": "",
+        "phone": phone, "phone_norm": phone, "whatsapp": phone, "email": "", "location": "", "product": "",
+        "source": "whatsapp", "status": "new", "priority": "medium", "segment": seg, "is_common": False,
+        "region": "", "language": "", "from_common": False, **me, "value": 0, "notes": "", "next_followup": None,
+        "no_of_vehicles": "", "remarks": "", "city": "", "branch": branch_from("", ""),
+        "rc": "", "aadhaar_url": "", "pan_url": "", "license_url": "", "state": "",
+        "status_changed_at": now_iso(), "claimed_at": now_iso(), "wa_conv_id": cid,
+        "created_by": user.get("id"), "created_by_name": user.get("name", ""),
+        "created_at": now_iso(), "updated_at": now_iso(),
+    }
+    await db.leads.insert_one(dict(lead))
+    await log_activity("lead_created", lead, user, "created a lead from WhatsApp Inbox")
+    return {"ok": True, "message": "Added to your leads", "lead": clean(lead)}
+
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 

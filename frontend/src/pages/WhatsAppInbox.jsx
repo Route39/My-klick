@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, Search, ArrowLeft, RefreshCw } from "lucide-react";
+import { MessageCircle, Send, Search, ArrowLeft, RefreshCw, UserPlus } from "lucide-react";
 import api, { formatApiErrorDetail } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 const fmt = (t) => (t ? new Date(t).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const body = (m) => m.content?.body || m.content?.text || m.content?.caption || `[${m.type}]`;
@@ -15,6 +16,20 @@ export default function WhatsAppInbox() {
   const [sendErr, setSendErr] = useState("");
   const [sending, setSending] = useState(false);
   const endRef = useRef(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [waFilter, setWaFilter] = useState("all");
+  const [waMember, setWaMember] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [assignMsg, setAssignMsg] = useState("");
+
+  const assignToMe = async (segment) => {
+    if (!sel) return;
+    setAssigning(true); setAssignMsg("");
+    try { const r = await api.post(`/wa-inbox/conversations/${sel}/assign-to-me`, { segment }); loadList(); setAssignMsg(`${r.data?.message || "Assigned"} (${segment === "driver" ? "Driver" : "Investor"})`); }
+    catch (e) { setAssignMsg(formatApiErrorDetail(e?.response?.data?.detail)); }
+    finally { setAssigning(false); }
+  };
 
   const loadList = async () => {
     try { const r = await api.get("/wa-inbox/conversations", { params: { limit: 100 } }); setConvs(r.data?.data || []); setErr(""); }
@@ -38,7 +53,10 @@ export default function WhatsAppInbox() {
     finally { setSending(false); }
   };
 
-  const list = convs.filter((c) => !q || `${c.contact_name || ""} ${c.contact_phone || ""}`.toLowerCase().includes(q.toLowerCase()));
+  const fMatch = (c, k) => k === "all" ? true : k === "open" ? !c.assigned_name : k === "taken" ? !!c.assigned_name
+    : k === "investor" ? !!c.assigned_name && c.assigned_segment !== "driver" : !!c.assigned_name && c.assigned_segment === "driver";
+  const waTabs = [["all", "All"], ["open", "Not taken"], ["taken", "Taken"], ["investor", "Investors"], ["driver", "Drivers"]];
+  const list = convs.filter((c) => (!isAdmin || (fMatch(c, waFilter) && (!waMember || c.assigned_name === waMember))) && (!q || `${c.contact_name || ""} ${c.contact_phone || ""}`.toLowerCase().includes(q.toLowerCase())));
   const msgs = [...(chat?.messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   return (
@@ -55,10 +73,27 @@ export default function WhatsAppInbox() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or number" className="w-full bg-transparent text-sm outline-none" />
           </div>
         </div>
+        {isAdmin && (
+          <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+            {waTabs.map(([k, label]) => (
+              <button key={k} onClick={() => setWaFilter(k)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${waFilter === k ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+                {label} <span className="opacity-80">({convs.filter((c) => fMatch(c, k)).length})</span>
+              </button>
+            ))}
+            <select value={waMember} onChange={(e) => setWaMember(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-emerald-500">
+              <option value="">All team members</option>
+              {Object.entries(convs.reduce((a, c) => { if (c.assigned_name) { const k = c.assigned_name; a[k] = a[k] || { t: 0, i: 0, d: 0 }; a[k].t++; c.assigned_segment === "driver" ? a[k].d++ : a[k].i++; } return a; }, {}))
+                .sort((a, b) => b[1].t - a[1].t)
+                .map(([n, v]) => <option key={n} value={n}>{n} — {v.t} taken (Investor {v.i} · Driver {v.d})</option>)}
+            </select>
+          </div>
+        )}
         {err && <p className="px-3 pb-2 text-xs text-red-600">{err}</p>}
         <div className="flex-1 overflow-y-auto thin-scroll">
           {list.map((c) => (
-            <button key={c.id} onClick={() => { setChat(null); setSendErr(""); setSel(c.id); }}
+            <button key={c.id} onClick={() => { setChat(null); setSendErr(""); setAssignMsg(""); setSel(c.id); }}
               className={`flex w-full items-start gap-3 border-b border-slate-100 px-3 py-3 text-left hover:bg-slate-50 ${sel === c.id ? "bg-emerald-50" : ""}`}>
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700">{(c.contact_name || "?").charAt(0).toUpperCase()}</div>
               <div className="min-w-0 flex-1">
@@ -70,6 +105,11 @@ export default function WhatsAppInbox() {
                   <span className="truncate text-xs text-slate-500">{c.last_message}</span>
                   {c.unread_count > 0 && <span className="ml-auto rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">{c.unread_count}</span>}
                 </div>
+                {c.assigned_name && (
+                  <span className={`mt-1 inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${c.assigned_segment === "driver" ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-800"}`}>
+                    {c.assigned_name} · {c.assigned_segment === "driver" ? "Driver" : "Investor"}
+                  </span>
+                )}
               </div>
             </button>
           ))}
@@ -88,6 +128,12 @@ export default function WhatsAppInbox() {
                 <p className="truncate font-semibold">{chat.contact_name || chat.contact_phone}</p>
                 <p className="text-xs text-slate-500">+{chat.contact_phone} · {chat.status}</p>
               </div>
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                <UserPlus className="hidden h-4 w-4 text-slate-500 sm:block" />
+                <span className="hidden text-xs font-medium text-slate-600 sm:inline">Assign to me:</span>
+                <button disabled={assigning} onClick={() => assignToMe("investor")} className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Investor</button>
+                <button disabled={assigning} onClick={() => assignToMe("driver")} className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Driver</button>
+              </div>
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] p-4 thin-scroll">
               {msgs.map((m) => (
@@ -100,6 +146,7 @@ export default function WhatsAppInbox() {
               ))}
               <div ref={endRef} />
             </div>
+            {assignMsg && <p className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">{assignMsg}</p>}
             {sendErr && <p className="px-3 pt-2 text-xs text-red-600">{sendErr}</p>}
             <form onSubmit={send} className="flex gap-2 border-t border-slate-200 p-3">
               <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a reply" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500" />
