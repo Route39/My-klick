@@ -1014,8 +1014,6 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
         _q = {"organization_id": org_of(user), "$or": [{"phone_norm": _n}]}
         if len(_n) == 10:
             _q["$or"].append({"phone": {"$regex": re.escape(_n) + "$"}})
-        if body.segment:
-            _q["segment"] = seg_match(body.segment)
         _dup = await db.leads.find_one(_q)
         if _dup:
             _who = _dup.get("assigned_name") or ("Common Leads (not taken)" if _dup.get("is_common") else "Unassigned")
@@ -1929,8 +1927,11 @@ async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depe
         raise HTTPException(status_code=409, detail=f"Lead already assigned to {owner.get('name') or lead.get('assigned_name')}")
     seg = "driver" if segment == "driver" else "investor"
     if lead:
-        await db.leads.update_one({"id": lead["id"]}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
+        _ok = await db.leads.find_one_and_update({"id": lead["id"], "assigned_to": {"$in": [None, user["id"]]}}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
                                   "is_common": False, "claimed_at": now_iso(), "updated_at": now_iso()}})
+        if not _ok:
+            await db.exo_calls.update_one({"sid": sid, "claimed_by": user["id"]}, {"$set": {"claimed_by": None, "claimed_name": None, "claimed_location": None}})
+            raise HTTPException(status_code=409, detail="Already taken by another staff")
         await db.followups.update_many({"lead_id": lead["id"], "assigned_to": None},
                                        {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", "")}})
     else:
@@ -1944,6 +1945,12 @@ async def exophones_claim(sid: str, segment: str = "investor", user: dict = Depe
             "created_at": now_iso(), "updated_at": now_iso(),
         }
         await db.leads.insert_one(dict(lead))
+        if c10:
+            _first = await db.leads.find({"organization_id": org, "phone_norm": c10}, {"_id": 0, "id": 1, "assigned_name": 1}).sort([("created_at", 1), ("id", 1)]).to_list(1)
+            if _first and _first[0]["id"] != lead["id"]:
+                await db.leads.delete_one({"id": lead["id"]})
+                await db.exo_calls.update_one({"sid": sid, "claimed_by": user["id"]}, {"$set": {"claimed_by": None, "claimed_name": None, "claimed_location": None}})
+                raise HTTPException(status_code=409, detail=f"Already taken by {_first[0].get('assigned_name') or 'another staff'}")
     await log_activity("lead_claimed", lead, user, "assigned an ExoPhones caller to themselves")
     if len(c10) == 10:
         rx = {"$regex": c10 + "$"}
