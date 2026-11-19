@@ -4,6 +4,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 export const TOKEN_KEY = "myklick_token";
 export const BRANCH_KEY = "myklick_branch";
+export const STATE_KEY = "myklick_state";
 // Pages that follow the global branch filter (Leads, Pipeline, Follow-ups, Customers, Dashboard)
 const BRANCH_PATHS = ["/leads", "/followups", "/customers", "/dashboard/stats", "/briefing"];
 
@@ -16,6 +17,8 @@ api.interceptors.request.use((config) => {
     const b = localStorage.getItem(BRANCH_KEY);
     const path = (config.url || "").split("?")[0];
     if (b && (config.method || "get").toLowerCase() === "get" && BRANCH_PATHS.includes(path)) config.headers["X-Branch"] = b;
+    const st = localStorage.getItem(STATE_KEY);
+    if (st && (config.method || "get").toLowerCase() === "get" && path === "/leads") config.params = { ...(config.params || {}), region: st };
   } catch (_) {}
   return config;
 });

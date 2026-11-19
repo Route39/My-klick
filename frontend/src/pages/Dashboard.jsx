@@ -81,7 +81,7 @@ export default function Dashboard({ segment = "" }) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Funnel */}
         <div className="lg:col-span-2">
-          {stats && <Funnel funnel={stats.funnel} />}
+          {stats && <Funnel funnel={stats.funnel} today={stats.funnel_today || {}} />}
         </div>
         {/* Sources */}
         <div>{stats && <Sources sources={stats.sources} />}</div>
@@ -181,7 +181,7 @@ function RingCard({ label, value, sub, icon: Icon, accent, rate }) {
   );
 }
 
-function Funnel({ funnel }) {
+function Funnel({ funnel, today = {} }) {
   const navigate = useNavigate();
   const max = Math.max(...STAGES.map((s) => funnel[s] || 0), 1);
   const stages = STAGES.filter((s) => s !== "lost");
@@ -203,6 +203,7 @@ function Funnel({ funnel }) {
                   <span className="font-display text-sm font-bold text-white">{count}</span>
                 </motion.div>
               </div>
+              <span className="w-20 shrink-0 text-right text-xs font-semibold text-emerald-600">{(today[s] || 0) > 0 ? `+${today[s]} today` : ""}</span>
             </button>
           );
         })}

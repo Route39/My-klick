@@ -36,6 +36,9 @@ function AddTeamMemberModal({ onSuccess }) {
   const [location, setLocation] = useState("");
   const [joiningDate, setJoiningDate] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [leaderId, setLeaderId] = useState("");
+  const { data: teamList = [] } = useQuery({ queryKey: ["team"], queryFn: async () => (await api.get("/team")).data });
+  const leaders = teamList.filter((t) => t.active !== false);
 
   const queryClient = useQueryClient();
 
@@ -59,10 +62,10 @@ function AddTeamMemberModal({ onSuccess }) {
   const onSubmit = (e) => {
     e.preventDefault();
     if (!location) return toast.error("Please select a location");
-    addMut.mutate({ name, phone, email, password, role, location, joining_date: joiningDate });
+    addMut.mutate({ name, phone, email, password, role, location, joining_date: joiningDate, leader_id: leaderId });
   };
 
-  if (me?.role === "admin_staff") return null;
+  if (!["admin", "team_leader"].includes(me?.role)) return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -127,6 +130,18 @@ function AddTeamMemberModal({ onSuccess }) {
                   </SelectContent>
                 </Select>
               </div>
+              {(
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Team Leader</Label>
+                <Select value={leaderId || "none"} onValueChange={(v) => setLeaderId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-200">
+                    <SelectItem value="none" className="rounded-lg">No team</SelectItem>
+                    {leaders.map((l) => <SelectItem key={l.id} value={l.id} className="rounded-lg">{l.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              )}
               <div>
                 <Label className="text-slate-700 font-semibold mb-1.5 block">Password</Label>
                 <div className="relative">
@@ -164,6 +179,9 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
   const [role, setRole] = useState("sales");
   const [location, setLocation] = useState("");
   const [joiningDate, setJoiningDate] = useState("");
+  const [leaderId, setLeaderId] = useState("");
+  const { data: teamList = [] } = useQuery({ queryKey: ["team"], queryFn: async () => (await api.get("/team")).data });
+  const leaders = teamList.filter((t) => t.active !== false && t.id !== staff?.id);
 
   React.useEffect(() => {
     if (staff && open && !isEditing) {
@@ -173,6 +191,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
       setRole(staff.role);
       setLocation(staff.location || "");
       setJoiningDate(staff.joining_date || "");
+      setLeaderId(staff.leader_id || "");
       setNewPassword("");
     }
   }, [staff, open, isEditing]);
@@ -181,7 +200,7 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
 
   const handleSave = (e) => {
     e.preventDefault();
-    onUpdate(staff.id, { name, phone, email, role, location, joining_date: joiningDate, ...(newPassword.trim() ? { password: newPassword.trim() } : {}) }, () => {
+    onUpdate(staff.id, { name, phone, email, role, location, joining_date: joiningDate, leader_id: leaderId, ...(newPassword.trim() ? { password: newPassword.trim() } : {}) }, () => {
       setIsEditing(false);
     });
   };
@@ -243,6 +262,18 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
                 </SelectContent>
               </Select>
             </div>
+              {(
+              <div>
+                <Label className="text-slate-700 font-semibold mb-1.5 block">Team Leader</Label>
+                <Select value={leaderId || "none"} onValueChange={(v) => setLeaderId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-200">
+                    <SelectItem value="none" className="rounded-lg">No team</SelectItem>
+                    {leaders.map((l) => <SelectItem key={l.id} value={l.id} className="rounded-lg">{l.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              )}
             <div>
               <Label className="text-slate-700 font-semibold mb-1.5 block">Reset Password <span className="font-normal text-slate-400">(leave blank to keep)</span></Label>
               <div className="relative">
@@ -287,6 +318,68 @@ function ViewStaffModal({ staff, open, setOpen, onDelete, onUpdate, onTransfer, 
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateTeamModal() {
+  const queryClient = useQueryClient();
+  const { data: teamList = [] } = useQuery({ queryKey: ["team"], queryFn: async () => (await api.get("/team")).data });
+  const staff = teamList.filter((t, i, arr) => t.active !== false && arr.findIndex((x) => x.id === t.id) === i);
+  const [open, setOpen] = useState(false);
+  const [leaderId, setLeaderId] = useState("");
+  const [members, setMembers] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const pickLeader = (v) => { setLeaderId(v); setMembers(staff.filter((x) => x.leader_id === v).map((x) => x.id)); };
+  const toggle = (id) => setMembers((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
+  const save = async () => {
+    if (!leaderId || members.length === 0) return toast.error("Pick a leader and at least one member");
+    setSaving(true);
+    try {
+      const old = staff.filter((x) => x.leader_id === leaderId && !members.includes(x.id)).map((x) => [x, ""]);
+      for (const [m, lid] of [...members.map((id) => [staff.find((x) => x.id === id), leaderId]), ...old]) {
+        await api.put(`/team/${m.id}`, { name: m.name, phone: m.phone, email: m.email, role: m.role, location: m.location, joining_date: m.joining_date, leader_id: lid });
+      }
+      toast.success("Team saved ✓");
+      queryClient.invalidateQueries({ queryKey: ["team"] });
+      setOpen(false); setLeaderId(""); setMembers([]);
+    } catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail) || "Could not save team"); }
+    setSaving(false);
+  };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button data-testid="create-team-btn" className="rounded-xl border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary/5">Create Team</button>
+      </DialogTrigger>
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[480px] max-h-[90vh] overflow-y-auto rounded-2xl p-6">
+        <DialogTitle className="text-xl font-display font-bold text-slate-900">Create Team</DialogTitle>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label className="text-slate-700 font-semibold mb-1.5 block">Team Leader</Label>
+            <Select value={leaderId || undefined} onValueChange={pickLeader}>
+              <SelectTrigger className="rounded-xl border-slate-200 bg-white"><SelectValue placeholder="Select leader" /></SelectTrigger>
+              <SelectContent className="rounded-xl border-slate-200">
+                {staff.map((l) => <SelectItem key={l.id} value={l.id} className="rounded-lg">{l.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {leaderId && (
+            <div>
+              <Label className="text-slate-700 font-semibold mb-1.5 block">Members</Label>
+              <div className="space-y-1.5">
+                {staff.filter((x) => x.id !== leaderId).map((x) => (
+                  <label key={x.id} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                    <input type="checkbox" checked={members.includes(x.id)} onChange={() => toggle(x.id)} className="h-4 w-4 accent-violet-600" />
+                    <span className="text-sm text-slate-800">{x.name}</span>
+                    <span className="ml-auto text-xs capitalize text-slate-400">{x.role.replace("_", " ")}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <button onClick={save} disabled={saving} className="w-full rounded-xl bg-primary py-2.5 font-semibold text-white disabled:opacity-60">{saving ? "Saving..." : "Save Team"}</button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -348,7 +441,7 @@ export default function Team() {
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Team Performance</h1>
           <p className="mt-1 text-slate-500">How your sales team is performing</p>
         </div>
-        <AddTeamMemberModal />
+        <div className="flex flex-wrap gap-2"><CreateTeamModal /><AddTeamMemberModal /></div>
       </div>
 
       {isLoading ? <ListSkeleton count={4} /> : (
@@ -397,6 +490,42 @@ export default function Team() {
         </div>
       )}
       
+      {!isLoading && data.some((m) => m.role === "team_leader" || data.some((x) => x.leader_id === m.id)) && (
+        <div className="space-y-3">
+          <h2 className="font-display text-xl font-bold text-slate-900">Teams</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {data.filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i && (m.role === "team_leader" || data.some((x) => x.leader_id === m.id))).map((tl) => {
+              const members = data.filter((m) => m.leader_id === tl.id);
+              const all = [tl, ...members];
+              const leads = all.reduce((n, m) => n + (m.leads || 0), 0);
+              const won = all.reduce((n, m) => n + (m.converted || 0), 0);
+              const rate = leads ? Math.round((won * 100) / leads) : 0;
+              return (
+                <div key={`team-${tl.id}`} data-testid={`team-group-${tl.id}`} className="rounded-2xl border border-slate-200/60 bg-white p-5">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={tl.name} size={40} />
+                    <div className="flex-1">
+                      <div className="font-display font-bold text-slate-900">{tl.name}'s Team</div>
+                      <div className="text-xs text-slate-400">{members.length} member{members.length === 1 ? "" : "s"}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <Stat value={leads} label="Team Leads" />
+                    <Stat value={won} label="Converted" accent />
+                    <Stat value={`${rate}%`} label="Rate" />
+                  </div>
+                  {members.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {members.map((m) => <span key={m.id} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{m.name}</span>)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <ViewStaffModal staff={selectedStaff} open={!!selectedStaff} setOpen={(v) => {if (!v) setSelectedStaff(null)}} onDelete={handleDelete} onUpdate={handleUpdate}
         onTransfer={(s) => { setSelectedStaff(null); setTransferStaff(s); }} onToggleActive={handleToggleActive} />
       <TransferLeadsDialog staff={transferStaff} open={!!transferStaff} onOpenChange={(v) => { if (!v) setTransferStaff(null); }} />

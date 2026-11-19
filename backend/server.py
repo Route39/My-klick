@@ -38,15 +38,27 @@ app = FastAPI(title="MyKlick CRM")
 # ---- Global branch filter: frontend sends "X-Branch: Bangalore|Chennai|Coimbatore|Tiruppur" ----
 import contextvars
 _BRANCH = contextvars.ContextVar("myklick_branch", default="")
+_BRANCH_STAFF = contextvars.ContextVar("myklick_branch_staff", default=[])
 _BRANCH_RX = {"tiruppur": "tirup{1,2}ur", "tirupur": "tirup{1,2}ur", "bangalore": "(bangalore|bengaluru|banglore)"}
 
 @app.middleware("http")
 async def branch_context(request, call_next):
-    token = _BRANCH.set((request.headers.get("x-branch") or "").strip())
+    _b = (request.headers.get("x-branch") or "").strip()
+    token = _BRANCH.set(_b)
+    _ids = []
+    if _b:
+        try:
+            async for _u in db.users.find({}, {"_id": 0, "id": 1, "location": 1, "branch": 1}):
+                if branch_from(_u.get("branch"), _u.get("location")) == branch_from(_b):
+                    _ids.append(_u["id"])
+        except Exception:
+            pass
+    token2 = _BRANCH_STAFF.set(_ids)
     try:
         return await call_next(request)
     finally:
         _BRANCH.reset(token)
+        _BRANCH_STAFF.reset(token2)
 
 _BRANCH_CITY = [("bangalore", "Bangalore"), ("bengaluru", "Bangalore"), ("banglore", "Bangalore"), ("chennai", "Chennai"),
                 ("coimbatore", "Coimbatore"), ("kovai", "Coimbatore"), ("tirupur", "Tiruppur"), ("tiruppur", "Tiruppur")]
@@ -60,11 +72,24 @@ def branch_from(*vals) -> str:
                 return b
     return ""
 
+async def fill_branch(ids):
+    """Empty lead branch -> assignee's branch (never overwrites a chosen branch)."""
+    ids = [ids] if isinstance(ids, str) else list(ids or [])
+    async for l in db.leads.find({"id": {"$in": ids}, "branch": {"$in": ["", None]}, "assigned_to": {"$nin": ["", None]}}, {"_id": 0, "id": 1, "assigned_to": 1}):
+        u = await db.users.find_one({"id": l["assigned_to"]}, {"_id": 0, "location": 1})
+        b = branch_from((u or {}).get("location"))
+        if b:
+            await db.leads.update_one({"id": l["id"]}, {"$set": {"branch": b}})
+
 def branch_q() -> dict:
     b = _BRANCH.get().lower()
     if not b:
         return {}
-    return {"branch": {"$regex": "^" + _BRANCH_RX.get(b, re.escape(b)) + "$", "$options": "i"}}
+    rx = {"$regex": "^" + _BRANCH_RX.get(b, re.escape(b)) + "$", "$options": "i"}
+    ids = _BRANCH_STAFF.get()
+    if not ids:
+        return {"branch": rx}
+    return {"$or": [{"branch": rx}, {"branch": {"$in": ["", None]}, "assigned_to": {"$in": ids}}]}
 api = APIRouter(prefix="/api")
 
 JWT_ALGORITHM = "HS256"
@@ -167,7 +192,9 @@ def lead_inactive(lead: dict) -> bool:
 def scope_leads(user: dict, base: dict = None, pool: bool = False, use_branch: bool = True) -> dict:
     q = _scope_leads_core(user, base, pool)
     if use_branch:
-        q.update(branch_q())
+        _bq = branch_q()
+        if _bq:
+            q["$and"] = q.get("$and", []) + [_bq]
     return q
 
 def _scope_leads_core(user: dict, base: dict = None, pool: bool = False) -> dict:
@@ -255,6 +282,7 @@ class TeamMemberUpdate(BaseModel):
     role: str
     location: Optional[str] = None
     joining_date: Optional[str] = None
+    leader_id: Optional[str] = None
     password: Optional[str] = None
 
 class TeamMemberIn(BaseModel):
@@ -265,6 +293,7 @@ class TeamMemberIn(BaseModel):
     role: str = "sales"
     location: str = ""
     joining_date: str = ""
+    leader_id: str = ""
 
 class RegisterIn(BaseModel):
     name: str
@@ -428,7 +457,7 @@ async def add_team_member(body: TeamMemberIn, user: dict = Depends(get_current_u
         "password_hash": hash_password(body.password or "password123"),
         "role": body.role if body.role in ("admin", "team_leader", "sales", "admin_staff") else "sales",
         "organization_id": org_of(user), "avatar": None, "created_at": now_iso(),
-        "location": body.location, "joining_date": body.joining_date,
+        "location": body.location, "joining_date": body.joining_date, "leader_id": body.leader_id or "",
     }
     await db.users.insert_one(dict(doc))
     return clean(doc)
@@ -484,6 +513,7 @@ async def transfer_leads(user_id: str, body: TransferIn, user: dict = Depends(ge
             continue
         ids, tname = [l["id"] for l in ls], t.get("name", "")
         await db.leads.update_many({"id": {"$in": ids}}, {"$set": {"assigned_to": t["id"], "assigned_name": tname, "updated_at": now}})
+        await fill_branch(ids)
         await db.followups.update_many({"lead_id": {"$in": ids}, "status": "pending"},
                                        {"$set": {"assigned_to": t["id"], "assigned_name": tname, "updated_at": now}})
         await db.customers.update_many({"lead_id": {"$in": ids}}, {"$set": {"assigned_to": t["id"], "assigned_name": tname}})
@@ -536,6 +566,7 @@ async def update_team_member(user_id: str, body: TeamMemberUpdate, user: dict = 
         {"$set": update_data}
     )
     _extra = {k: v for k, v in {"location": body.location, "joining_date": body.joining_date}.items() if v}
+    if body.leader_id is not None: _extra["leader_id"] = body.leader_id
     if _extra:
         await db.users.update_one({"id": user_id}, {"$set": _extra})
     return {"ok": True}
@@ -757,7 +788,7 @@ async def team_performance(user: dict = Depends(get_current_user)):
         rate = round((converted / total) * 100) if total else 0
         out.append({
             "id": u_id, "name": u.get("name", "Unknown"), "role": u.get("role", "sales"), "avatar": u.get("avatar"),
-            "phone": u.get("phone", ""), "email": u.get("email", ""), "location": u.get("location", ""), "joining_date": u.get("joining_date", ""), "active": u.get("active", True),
+            "phone": u.get("phone", ""), "email": u.get("email", ""), "location": u.get("location", ""), "joining_date": u.get("joining_date", ""), "active": u.get("active", True), "leader_id": u.get("leader_id", ""),
             "leads": total, "contacted": contacted, "converted": converted,
             "value": value, "conversion_rate": rate,
         })
@@ -771,9 +802,22 @@ async def team_performance(user: dict = Depends(get_current_user)):
 async def list_leads(
     status: Optional[str] = None, exclude_status: Optional[str] = None, source: Optional[str] = None,
     assigned_to: Optional[str] = None, q: Optional[str] = None, segment: Optional[str] = None,
-    date_from: Optional[str] = None, date_to: Optional[str] = None, user: dict = Depends(get_current_user),
+    date_from: Optional[str] = None, date_to: Optional[str] = None, region: Optional[str] = None,
+    user: dict = Depends(get_current_user),
 ):
     base = {}
+    if region in REGIONS or region == "none":
+        _ids = {r: [] for r in REGIONS}
+        async for _u in db.users.find({"organization_id": org_of(user)}, {"_id": 0, "id": 1, "region": 1, "location": 1}):
+            _r = _u.get("region") or LOC_REGION.get((_u.get("location") or "").strip().lower())
+            if _r in _ids:
+                _ids[_r].append(_u["id"])
+        _all = [i for v in _ids.values() for i in v]
+        if region == "none":
+            _cond = {"assigned_to": {"$nin": _all}, "region": {"$in": ["", None]}}
+        else:
+            _cond = {"$or": [{"assigned_to": {"$in": _ids[region]}}, {"assigned_to": {"$nin": _all}, "region": region}]}
+        base.setdefault("$and", []).append(_cond)
 
     if date_from or date_to:
         created_filter = {}
@@ -1069,6 +1113,7 @@ async def create_lead(body: LeadIn, user: dict = Depends(get_current_user)):
             await db.followups.insert_one(dict(fu))
 
         await db.leads.insert_one(dict(lead))
+        await fill_branch(lead["id"])
         await log_activity("lead_created", lead, user, "created a new lead")
         
         # Trigger background metadata lookup
@@ -1111,6 +1156,7 @@ async def update_lead(lead_id: str, body: LeadIn, user: dict = Depends(get_curre
     elif old_status == "follow_up" and body.status != "follow_up":
         update["pre_followup_status"] = None
     await db.leads.update_one({"id": lead_id}, {"$set": update})
+    await fill_branch(lead_id)
 
     # Keep the converted customer's cash value in sync with the lead
     await db.customers.update_many({"lead_id": lead_id}, {"$set": {"value": body.value}})
@@ -2007,6 +2053,7 @@ async def create_escalation(body: EscalateIn, user: dict = Depends(get_current_u
             raise HTTPException(status_code=409, detail="This lead is already escalated")
         if not lead.get("assigned_to"):
             await db.leads.update_one({"id": lead["id"]}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""), "is_common": False}})
+            await fill_branch(lead["id"])
         call = {"direction": "lead", "lead_id": lead["id"], "lead_name": lead.get("name", ""),
                 "from_number": lead.get("phone", ""), "outcome": "New lead"}
     customer = call.get("from_number") if call.get("direction") in ("incoming", "lead") else call.get("to_number")
@@ -2099,6 +2146,7 @@ async def assign_escalation(esc_id: str, user: dict = Depends(get_current_user))
     if lead_id:
         await db.leads.update_one({"id": lead_id}, {"$set": {"assigned_to": user["id"], "assigned_name": user.get("name", ""),
                                                              "is_common": False, "updated_at": now_iso()}})
+        await fill_branch(lead_id)
         await db.escalations.update_one({"id": esc_id}, {"$set": {"lead_id": lead_id}})
         esc["lead_id"] = lead_id
     return clean(esc)
@@ -2527,7 +2575,7 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
     base = {"is_common": {"$ne": True}}
     if segment:
         base["segment"] = seg_match(segment)
-    all_leads = await db.leads.find(scope_leads(user, base), {"_id": 0, "id": 1, "created_at": 1, "status": 1, "source": 1, "updated_at": 1, "converted_at": 1}).to_list(5000)
+    all_leads = await db.leads.find(scope_leads(user, base), {"_id": 0, "id": 1, "created_at": 1, "status": 1, "source": 1, "updated_at": 1, "converted_at": 1, "status_changed_at": 1}).to_list(5000)
     lead_ids = [l["id"] for l in all_leads]
     now = datetime.now(timezone.utc)
     today = today_ist()
@@ -2540,6 +2588,8 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
 
     new_today = len([l for l in all_leads if created_on(l, today)])
     funnel = {s: len([l for l in all_leads if l.get("status") == s]) for s in STATUSES}
+    _t = today_ist()
+    funnel_today = {s: len([l for l in all_leads if l.get("status") == s and l.get("status_changed_at") and ist_date(l["status_changed_at"]) == _t]) for s in STATUSES}
 
     loose = {"lead_id": None, "organization_id": org_of(user)}
     if segment:
@@ -2606,7 +2656,7 @@ async def dashboard_stats(segment: Optional[str] = None, user: dict = Depends(ge
         "calls": {"total": len(calls), "connected": connected,
                   "rate": round(connected / (len(calls) or 1) * 100)},
         "conversions": {"total": len(converted), "delta_pct": conv_delta, "spark": spark(conv_items, "d")},
-        "funnel": funnel, "sources": sources,
+        "funnel": funnel, "funnel_today": funnel_today, "sources": sources,
     }
 
 @api.get("/config")

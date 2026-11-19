@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { formatApiErrorDetail } from "@/lib/api";
+import { SOURCES, SOURCE_META, STAGES, STATUS_META } from "@/lib/constants";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { Loader2, UploadCloud, Rocket, AlertTriangle, X } from "lucide-react";
@@ -15,7 +17,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
   const [formData, setFormData] = useState({
     name: "", remarks: "",
     phone: "",
-    location: "", branch: "",
+    location: "", branch: "", source: "manual", status: "",
     rc: "yes",
   });
   
@@ -39,7 +41,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
 
   useEffect(() => {
     if (open) {
-      setFormData({ name: "", remarks: "", phone: "", location: "", branch: "", rc: "yes" });
+      setFormData({ name: "", remarks: "", phone: "", location: "", branch: "", source: "manual", status: "", rc: "yes" });
       setFiles({ aadhaar: null, pan: null, license: null });
     }
   }, [open]);
@@ -79,7 +81,7 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
       
       addLead.mutate({
         ...formData,
-        status: defaultStatus,
+        status: formData.status || defaultStatus,
         segment: "driver",
         value: 0,
         assigned_to: null,
@@ -153,12 +155,34 @@ export function AddDriverDialog({ open, onOpenChange, defaultStatus = "new" }) {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 m425:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Source</Label>
+              <Select value={formData.source} onValueChange={(v) => setFormData({ ...formData, source: v })}>
+                <SelectTrigger data-testid="driver-source-select" className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SOURCES.map((s) => <SelectItem key={s} value={s}>{SOURCE_META[s].label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={formData.status || defaultStatus} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                <SelectTrigger data-testid="driver-status-select" className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STAGES.filter((s) => s !== "converted").map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 m425:col-span-2">
             <Label>Branch</Label>
-            <select className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm" value={formData.branch} onChange={(e) => setFormData({ ...formData, branch: e.target.value })}>
-              <option value="">Select branch</option>
-              {["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
+            <Select value={formData.branch || undefined} onValueChange={(v) => setFormData({ ...formData, branch: v })}>
+                <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>
+                  {["Bangalore", "Coimbatore", "Chennai", "Tiruppur"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+          </div>
           </div>
           <div className="space-y-1.5">
             <Label>Remarks</Label>

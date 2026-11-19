@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { BranchFilter } from "@/components/BranchFilter";
+import { StateFilter } from "@/components/StateFilter";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { AddDriverDialog } from "@/components/AddDriverDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
@@ -139,8 +140,8 @@ export default function AppShell() {
               </NavLink>
             ))}
 
-            {/* STAFF — admin, team leader, admin+staff */}
-            {["admin", "team_leader", "admin_staff"].includes(user?.role) && (
+            {/* STAFF — everyone */}
+            {(
               <>
                 <div className="px-3 pb-2 pt-6">
                   <span className="font-display text-xxl font-bold uppercase tracking-widest text-slate-400">STAFF</span>
@@ -216,6 +217,7 @@ export default function AppShell() {
               </span>
             </div>
             <BranchFilter className="ml-auto lg:ml-3" />
+            <StateFilter className="ml-2" />
             <button data-testid="open-search-btn" onClick={() => setSearchOpen(true)}
               className="ml-auto flex items-center gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-300 sm:w-72 lg:ml-3">
               <Search className="h-4 w-4" />
