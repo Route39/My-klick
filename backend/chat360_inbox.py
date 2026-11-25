@@ -92,4 +92,13 @@ def build_router(get_current_user, wa_filter=None):
             raise HTTPException(res.status_code, msg)
         return res.json()
 
+    @r.post("/conversations/{cid}/voice")
+    async def send_voice(cid: str, file: UploadFile = File(...), user=Depends(get_current_user)):
+        if wa_filter:
+            cur = await call("GET", f"/conversations/{cid}")
+            if cur.get("data") and not await wa_filter([cur["data"]], user):
+                raise HTTPException(403, "This chat is assigned to another staff")
+        data = await file.read()
+        return await call("POST", f"/conversations/{cid}/voice", files={"file": (file.filename or "voice.webm", data, file.content_type or "application/octet-stream")})
+
     return r

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, Search, ArrowLeft, RefreshCw, UserPlus, Paperclip } from "lucide-react";
+import { MessageCircle, Send, Search, ArrowLeft, RefreshCw, UserPlus, Paperclip, Mic, Square, Trash2 } from "lucide-react";
 import api, { formatApiErrorDetail } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -44,6 +44,7 @@ const waOpts = (c) => {
 
 function MsgContent({ m }) {
   const c = m.content || {};
+  if (m.type === "audio" && !c.media_id && /^https?:\/\//.test(c.link || "")) return <audio src={c.link} controls className="max-w-full" />;
   if (c.media_id) return <div className="space-y-1"><MediaView m={m} />{c.caption ? <div className="whitespace-pre-wrap">{c.caption}</div> : null}</div>;
   const o = waOpts(c);
   return <>{body(m)}{o.length ? <div className="mt-2 flex flex-wrap gap-1.5">{o.map((t, i) => <span key={i} className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs font-medium text-emerald-700">{t}</span>)}</div> : null}</>;
@@ -107,6 +108,55 @@ export default function WhatsAppInbox() {
       setSendErr(typeof d === "string" ? d : "File upload failed");
     } finally { setSending(false); }
   };
+  // ---- Voice note recording ----
+  const [rec, setRec] = useState({ state: "idle", secs: 0, blob: null, url: "", ext: "webm" });
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const timerRef = useRef(null);
+  const stopTracks = () => { clearInterval(timerRef.current); streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; };
+  const discardVoice = () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") { recorderRef.current.onstop = null; recorderRef.current.stop(); }
+    recorderRef.current = null; stopTracks();
+    setRec((r) => { if (r.url) URL.revokeObjectURL(r.url); return { state: "idle", secs: 0, blob: null, url: "", ext: "webm" }; });
+  };
+  const startVoice = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { setSendErr("Voice recording is not supported in this browser"); return; }
+    setSendErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const ext = mr.mimeType.includes("ogg") ? "ogg" : mr.mimeType.includes("mp4") ? "m4a" : "webm";
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stopTracks();
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        setRec((r) => ({ ...r, state: "recorded", blob, url: URL.createObjectURL(blob), ext }));
+      };
+      recorderRef.current = mr; mr.start();
+      setRec({ state: "recording", secs: 0, blob: null, url: "", ext });
+      timerRef.current = setInterval(() => setRec((r) => {
+        if (r.secs + 1 >= 300 && recorderRef.current?.state === "recording") recorderRef.current.stop(); // 5 min cap
+        return { ...r, secs: r.secs + 1 };
+      }), 1000);
+    } catch (_) { stopTracks(); setSendErr("Microphone access was denied or is unavailable"); }
+  };
+  const stopVoice = () => { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); };
+  const sendVoice = async () => {
+    if (!rec.blob || !sel) return;
+    setSending(true); setSendErr("");
+    try {
+      const fd = new FormData(); fd.append("file", rec.blob, `voice-${Date.now()}.${rec.ext}`);
+      await api.post(`/wa-inbox/conversations/${sel}/voice`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      markSeen(convs.find((x) => x.id === sel) || { id: sel }); discardVoice(); await loadChat(sel); loadList();
+    } catch (ex) { setSendErr(formatApiErrorDetail(ex?.response?.data?.detail)); }
+    finally { setSending(false); }
+  };
+  useEffect(() => { discardVoice(); return () => discardVoice(); }, [sel]); // eslint-disable-line
+  const fmtSecs = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
   const send = async (e) => {
     e.preventDefault();
     const t = text.trim();
@@ -215,8 +265,17 @@ export default function WhatsAppInbox() {
             <form onSubmit={send} className="flex gap-2 border-t border-slate-200 p-3">
               <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*,video/mp4,video/3gpp" onChange={sendFile} />
               <button type="button" onClick={() => fileRef.current?.click()} disabled={sending} title="Attach image or document" className="flex items-center rounded-xl border border-slate-200 px-3 text-slate-500 hover:bg-slate-50 disabled:opacity-50"><Paperclip className="h-4 w-4" /></button>
-              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a reply" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-              <button disabled={sending || !text.trim()} className="flex items-center gap-1 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50"><Send className="h-4 w-4" /> Send</button>
+              {rec.state === "idle" && <button type="button" onClick={startVoice} disabled={sending} title="Record voice message" className="flex items-center rounded-xl border border-slate-200 px-3 text-slate-500 hover:bg-slate-50 disabled:opacity-50"><Mic className="h-4 w-4" /></button>}
+              {rec.state === "recording" && <div className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" /><span className="font-mono text-sm text-slate-700">{fmtSecs(rec.secs)}</span><span className="flex-1 text-xs text-slate-400">Recording…</span>
+                <button type="button" onClick={discardVoice} title="Cancel" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"><Trash2 className="h-4 w-4" /></button>
+                <button type="button" onClick={stopVoice} className="flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white"><Square className="h-3.5 w-3.5" /> Stop</button></div>}
+              {rec.state === "recorded" && <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
+                <audio src={rec.url} controls className="h-9 min-w-0 flex-1" />
+                <button type="button" onClick={discardVoice} title="Discard" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"><Trash2 className="h-4 w-4" /></button>
+                <button type="button" disabled={sending} onClick={sendVoice} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3.5 w-3.5" /> Send</button></div>}
+              {rec.state === "idle" && <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a reply" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500" />}
+              {rec.state === "idle" && <button disabled={sending || !text.trim()} className="flex items-center gap-1 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50"><Send className="h-4 w-4" /> Send</button>}
             </form>
           </>
         )}
