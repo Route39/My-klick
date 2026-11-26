@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { PhoneCall, Play, CheckCircle2, PartyPopper, Clock } from "lucide-react";
+import { PhoneCall, Play, CheckCircle2, PartyPopper, Clock, Users, Inbox, AlertTriangle, CalendarClock } from "lucide-react";
 import api from "@/lib/api";
 import { useCall } from "@/context/CallContext";
+import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/InitialsAvatar";
 import { SourceBadge } from "@/components/Badges";
 import { formatClock, formatDay } from "@/lib/constants";
@@ -15,7 +16,13 @@ export function Briefing({ segment = "investor" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { startCall } = useCall();
+  const { user } = useAuth();
+  const isManager = ["admin", "team_leader", "admin_staff"].includes(user?.role);
+  const [filter, setFilter] = useState("overdue"); // "overdue" | "today"
   const { data, isLoading } = useQuery({ queryKey: ["briefing", segment], queryFn: async () => (await api.get("/briefing", { params: { segment } })).data });
+  const { data: stats } = useQuery({ queryKey: ["stats", segment], queryFn: async () => (await api.get("/dashboard/stats", { params: { segment } })).data });
+  const commonEndpoint = isManager ? "/common-leads/report" : "/common-leads/report-mine";
+  const { data: common } = useQuery({ queryKey: ["common-leads", "report", segment, commonEndpoint], queryFn: async () => (await api.get(commonEndpoint, { params: { segment } })).data });
 
   const complete = useMutation({
     mutationFn: async (fid) => (await api.patch(`/followups/${fid}/complete`)).data,
@@ -32,7 +39,8 @@ export function Briefing({ segment = "investor" }) {
 
   if (isLoading || !data) return null;
   const { counts, items } = data;
-  const first = items[0];
+  const list = filter ? items.filter((it) => it.bucket === filter) : items;
+  const first = list[0];
 
   return (
     <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -43,68 +51,55 @@ export function Briefing({ segment = "investor" }) {
         <h2 className="font-display text-2xl font-extrabold">Today's Briefing</h2>
         <p className="mt-1 text-slate-300">Here's what needs your attention today.</p>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Pill color="bg-red-500/20 text-red-200 ring-red-400/30" dot="#ef4444" label="Overdue" value={counts.overdue} testid="briefing-overdue" />
-          <Pill color="bg-amber-500/20 text-amber-200 ring-amber-400/30" dot="#f59e0b" label="High priority" value={counts.high_priority} testid="briefing-high" />
-          <Pill color="bg-emerald-500/20 text-emerald-200 ring-emerald-400/30" dot="#10b981" label="Due today" value={counts.today} testid="briefing-today" />
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+          <StatCard icon={Users} label="Total leads" value={stats?.new_leads?.total} tone={TONES.indigo} testid="briefing-total" />
+          <StatCard icon={Inbox} label="Common leads" value={common?.length} sub={common ? `Not taken ${common.filter((r) => !r.assigned_to).length}` : undefined} tone={TONES.sky} testid="briefing-common" />
+          <StatCard icon={CheckCircle2} label="Converted leads" value={stats?.funnel?.converted} tone={TONES.violet} testid="briefing-converted" />
+          <StatCard icon={AlertTriangle} label="Overdue" value={counts.overdue} tone={TONES.red} testid="briefing-overdue" />
+          <StatCard icon={CalendarClock} label="Due today" value={counts.today} tone={TONES.emerald} testid="briefing-today" />
         </div>
 
-        {first ? (
-          <div className="mt-6">
-            <div className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Start with this</div>
-            <div className="rounded-2xl bg-white/10 p-4 backdrop-blur" data-testid="briefing-top-item">
-              <div className="flex items-center gap-3">
-                <Avatar name={first.name} size={44} />
-                <button onClick={() => navigate(segment === "driver" ? `/drivers/leads/${first.lead_id}` : `/leads/${first.lead_id}`)} className="min-w-0 flex-1 text-left">
-                  <div className="truncate font-display font-bold">{first.name}</div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-300">
-                    <span className="capitalize">{first.status?.replace("_", " ")}</span>
-                    {first.followup_at && <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {formatClock(first.followup_at)}</span>}
-                    {first.last_call && <span>Last call · {first.last_call}</span>}
-                  </div>
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Act testid="briefing-call" onClick={() => startCall({ ...first, id: first.lead_id })} className="bg-indigo-500 hover:bg-indigo-600">📞 Call</Act>
-                <Act testid="briefing-whatsapp" onClick={() => whatsapp(first.lead_id, first.name)} className="bg-emerald-500 hover:bg-emerald-600">💬 WhatsApp</Act>
-                {first.followup_id && <Act testid="briefing-complete" onClick={() => complete.mutate(first.followup_id)} className="bg-white/15 hover:bg-white/25">✓ Complete</Act>}
-                {first.followup_id && <Act testid="briefing-reschedule" onClick={() => reschedule.mutate(first.followup_id)} className="bg-white/15 hover:bg-white/25">Reschedule</Act>}
-              </div>
-            </div>
-
-            {items.length > 1 && (
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {items.slice(1, 5).map((it) => (
-                  <button key={it.lead_id} onClick={() => navigate(segment === "driver" ? `/drivers/leads/${it.lead_id}` : `/leads/${it.lead_id}`)}
-                    className="flex items-center gap-3 rounded-xl bg-white/5 p-3 text-left transition hover:bg-white/10">
-                    <span className="h-2 w-2 rounded-full" style={{ background: it.bucket === "overdue" ? "#ef4444" : it.bucket === "today" ? "#10b981" : "#f59e0b" }} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">{it.name}</div>
-                      <div className="truncate text-xs text-slate-400">{it.reason || it.status?.replace("_", " ")}</div>
-                    </div>
-                    {it.followup_at && <span className="text-xs text-slate-400">{formatClock(it.followup_at)}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="mt-6 rounded-2xl bg-white/10 p-6 text-center backdrop-blur">
-            <PartyPopper className="mx-auto h-8 w-8 text-emerald-300" />
-            <p className="mt-2 font-display text-lg font-bold">You're all caught up 🎉</p>
-            <p className="text-sm text-slate-300">No urgent follow-ups right now.</p>
-          </div>
-        )}
+        
       </div>
     </motion.section>
   );
 }
 
-function Pill({ color, dot, label, value, testid }) {
+function Pill({ color, dot, label, value, testid, onClick, active }) {
   return (
-    <div data-testid={testid} className={cn("inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold ring-1", color)}>
+    <button type="button" data-testid={testid} onClick={onClick}
+      className={cn("inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold ring-1 transition hover:brightness-125 active:scale-95", color, active && "ring-2 ring-white/70")}>
       <span className="h-2 w-2 rounded-full" style={{ background: dot }} />
       <span className="font-display text-lg font-extrabold">{value}</span> {label}
+    </button>
+  );
+}
+
+const TONES = {
+  indigo:  { glow: "shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_26px_rgba(99,102,241,0.30),inset_0_1px_0_rgba(255,255,255,0.35)] hover:shadow-[0_0_34px_rgba(99,102,241,0.55),inset_0_1px_0_rgba(255,255,255,0.5)]",  blob: "bg-indigo-500/30",  icon: "bg-indigo-500/20 text-indigo-200 ring-indigo-400/40" },
+  sky:     { glow: "shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_26px_rgba(14,165,233,0.30),inset_0_1px_0_rgba(255,255,255,0.35)] hover:shadow-[0_0_34px_rgba(14,165,233,0.55),inset_0_1px_0_rgba(255,255,255,0.5)]",    blob: "bg-sky-500/30",     icon: "bg-sky-500/20 text-sky-200 ring-sky-400/40" },
+  violet:  { glow: "shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_26px_rgba(168,85,247,0.30),inset_0_1px_0_rgba(255,255,255,0.35)] hover:shadow-[0_0_34px_rgba(168,85,247,0.55),inset_0_1px_0_rgba(255,255,255,0.5)]",  blob: "bg-purple-500/30",  icon: "bg-purple-500/20 text-purple-200 ring-purple-400/40" },
+  red:     { glow: "shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_26px_rgba(239,68,68,0.30),inset_0_1px_0_rgba(255,255,255,0.35)] hover:shadow-[0_0_34px_rgba(239,68,68,0.55),inset_0_1px_0_rgba(255,255,255,0.5)]",    blob: "bg-red-500/30",     icon: "bg-red-500/20 text-red-200 ring-red-400/40" },
+  emerald: { glow: "shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_26px_rgba(16,185,129,0.30),inset_0_1px_0_rgba(255,255,255,0.35)] hover:shadow-[0_0_34px_rgba(16,185,129,0.55),inset_0_1px_0_rgba(255,255,255,0.5)]",  blob: "bg-emerald-500/30", icon: "bg-emerald-500/20 text-emerald-200 ring-emerald-400/40" },
+};
+
+function StatCard({ icon: Icon, label, value, sub, tone, testid }) {
+  return (
+    <div data-testid={testid}
+      className={cn("relative flex min-h-[132px] flex-col justify-between overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-4 backdrop-blur-md transition hover:border-white/40", tone.glow)}>
+      <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
+      <span className="pointer-events-none absolute inset-x-6 bottom-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+      <span className={cn("pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full blur-2xl", tone.blob)} />
+      <div className={cn("relative flex h-10 w-10 items-center justify-center rounded-xl ring-1", tone.icon)}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="relative mt-4">
+        <div className="font-display text-4xl font-extrabold leading-none">{value ?? "–"}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-300">
+          <span>{label}</span>
+          {sub && <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/30">{sub}</span>}
+        </div>
+      </div>
     </div>
   );
 }

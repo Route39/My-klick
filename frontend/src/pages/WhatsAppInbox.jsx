@@ -42,9 +42,21 @@ const waOpts = (c) => {
   return [...btns, ...rows].map(pick).filter(Boolean);
 };
 
+// Outgoing media (sent from Chat360 or here) is stored with a public `link` instead of a `media_id`.
+function LinkMedia({ m, c }) {
+  const [fail, setFail] = useState(false);
+  if (fail) return <a href={c.link} target="_blank" rel="noreferrer" className="break-all text-sky-700 underline">{c.link}</a>;
+  let el;
+  if (m.type === "image") el = <a href={c.link} target="_blank" rel="noreferrer"><img src={c.link} alt="" onError={() => setFail(true)} className="max-h-64 max-w-[260px] rounded-lg object-cover" /></a>;
+  else if (m.type === "video") el = <video src={c.link} controls onError={() => setFail(true)} className="max-h-64 max-w-[260px] rounded-lg" />;
+  else if (m.type === "audio") el = <audio src={c.link} controls onError={() => setFail(true)} className="max-w-full" />;
+  else el = <a href={c.link} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white">📄 {c.filename || "Document"}</a>;
+  return <div className="space-y-1">{el}{c.caption ? <div className="whitespace-pre-wrap">{c.caption}</div> : null}</div>;
+}
+
 function MsgContent({ m }) {
   const c = m.content || {};
-  if (m.type === "audio" && !c.media_id && /^https?:\/\//.test(c.link || "")) return <audio src={c.link} controls className="max-w-full" />;
+  if (["image", "video", "audio", "document"].includes(m.type) && !c.media_id && /^https?:\/\//.test(c.link || "")) return <LinkMedia m={m} c={c} />;
   if (c.media_id) return <div className="space-y-1"><MediaView m={m} />{c.caption ? <div className="whitespace-pre-wrap">{c.caption}</div> : null}</div>;
   const o = waOpts(c);
   return <>{body(m)}{o.length ? <div className="mt-2 flex flex-wrap gap-1.5">{o.map((t, i) => <span key={i} className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs font-medium text-emerald-700">{t}</span>)}</div> : null}</>;

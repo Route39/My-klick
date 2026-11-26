@@ -2419,7 +2419,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
             due = datetime.fromisoformat(f["due_at"])
         except Exception:
             continue
-        (overdue if due < now else today_list).append((due, f))
+        (overdue if ist_date(due) < today else today_list).append((due, f))
     today_only = [x for x in today_list if ist_date(x[0]) == today]
 
     lead_scope = {"priority": "high", "status": {"$nin": ["converted", "lost"]}}
@@ -2457,7 +2457,7 @@ async def briefing(segment: Optional[str] = None, user: dict = Depends(get_curre
         if f["lead_id"] in seen:
             continue
         seen.add(f["lead_id"])
-        cands.append((f["lead_id"], f, "overdue" if _d < now else "today"))
+        cands.append((f["lead_id"], f, "overdue" if ist_date(_d) < today else "today"))
     for lead in high_leads:
         if len(cands) >= 12:
             break
